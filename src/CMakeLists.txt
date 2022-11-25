@@ -1,7 +1,7 @@
-add_executable(stunpp_server main.cpp stun_buffer.cpp stun_buffer2.cpp)
+add_library(stunpp stun_buffer.cpp)
 
-target_include_directories(stunpp_server PRIVATE ../inc)
+target_include_directories(stunpp PUBLIC ../inc)
 
-target_link_libraries(stunpp_server ws2_32)
+target_link_libraries(stunpp ws2_32)
 
-target_compile_options(stunpp_server PRIVATE /sdl /permissive- /JMC- /Zc:__cplusplus)
+target_compile_options(stunpp PRIVATE /sdl /permissive- /JMC- /W4 /Zc:__cplusplus)
