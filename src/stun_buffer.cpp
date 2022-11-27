@@ -2,6 +2,8 @@
 
 #include <cassert>
 
+#include "win32/message_fingerprint.h"
+
 namespace
 {
     std::uint32_t c_magic_cookie = 0x2112A442;
@@ -136,7 +138,7 @@ namespace stunpp
         return addr;
     }
 
-    std::string_view username_attribute::value() const noexcept
+    std::string_view string_view_attribute::value() const noexcept
     {
         auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
 
@@ -153,30 +155,11 @@ namespace stunpp
         return {}; // TODO:
     }
 
-    std::string_view realm_attribute::value() const noexcept
+    std::span<const std::uint16_t> unknown_attribute_values::values() const noexcept
     {
         auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
 
-        return { reinterpret_cast<const char*>(string_start), size };
-    }
-
-    std::string_view nonce_attribute::value() const noexcept
-    {
-        auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
-
-        return { reinterpret_cast<const char*>(string_start), size };
-    }
-
-    std::span<std::uint16_t> unknown_attribute_values::values() const noexcept
-    {
-        return {}; // TODO:
-    }
-
-    std::string_view software_attribute::value() const noexcept
-    {
-        auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
-
-        return { reinterpret_cast<const char*>(string_start), size };
+        return { reinterpret_cast<const std::uint16_t*>(string_start), size };
     }
 
     message_builder::message_builder(
@@ -262,7 +245,7 @@ namespace stunpp
         const SOCKADDR_IN& address
     ) && noexcept
     {
-        auto attr = add_attribute<ipv4_mapped_address_attribute>(stun_attribute_type::mapped_address);
+        auto attr = add_attribute<ipv4_mapped_address_attribute>();
 
         attr->family = address_family::ipv4;
         attr->size = sizeof(ipv4_mapped_address_attribute) - sizeof(stun_attribute);
@@ -276,7 +259,7 @@ namespace stunpp
         const SOCKADDR_IN6& address
     ) && noexcept
     {
-        auto attr = add_attribute<ipv6_mapped_address_attribute>(stun_attribute_type::mapped_address);
+        auto attr = add_attribute<ipv6_mapped_address_attribute>();
 
         attr->family = address_family::ipv6;
         attr->size = sizeof(ipv6_mapped_address_attribute) - sizeof(stun_attribute);
@@ -290,7 +273,7 @@ namespace stunpp
         const SOCKADDR_IN& address
     ) && noexcept
     {
-        auto attr = add_attribute<ipv4_xor_mapped_address_attribute>(stun_attribute_type::xor_mapped_address);
+        auto attr = add_attribute<ipv4_xor_mapped_address_attribute>();
 
         attr->family = address_family::ipv4;
         attr->size = sizeof(ipv4_xor_mapped_address_attribute) - sizeof(stun_attribute);
@@ -308,7 +291,7 @@ namespace stunpp
         const SOCKADDR_IN6& address
     ) && noexcept
     {
-        auto attr = add_attribute<ipv6_xor_mapped_address_attribute>(stun_attribute_type::xor_mapped_address);
+        auto attr = add_attribute<ipv6_xor_mapped_address_attribute>();
 
         attr->family = address_family::ipv6;
         attr->size = sizeof(ipv6_xor_mapped_address_attribute) - sizeof(stun_attribute);
@@ -335,22 +318,11 @@ namespace stunpp
         return std::move(*this);
     }
 
-    message_builder&& message_builder::add_username(
-        std::string_view username
-    ) && noexcept
-    {
-        auto attr = add_attribute<username_attribute>(stun_attribute_type::username, username.size());
-
-        std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), username.data(), username.size());
-
-        return std::move(*this);
-    }
-
     message_builder&& message_builder::add_error_code(
         stun_error_code /*error*/
     ) && noexcept
     {
-        auto attr = add_attribute<error_code_attribute>(stun_attribute_type::error_code);
+        auto attr = add_attribute<error_code_attribute>();
 
         attr->size = sizeof(error_code_attribute) - sizeof(stun_attribute);
 
@@ -359,22 +331,11 @@ namespace stunpp
         return std::move(*this);
     }
 
-    message_builder&& message_builder::add_realm(
-        std::string_view realm
-    ) && noexcept
-    {
-        auto attr = add_attribute<realm_attribute>(stun_attribute_type::realm, realm.size());
-
-        std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), realm.data(), realm.size());
-
-        return std::move(*this);
-    }
-
     message_builder&& message_builder::add_nonce(
         std::string_view nonce
     ) && noexcept
     {
-        auto attr = add_attribute<nonce_attribute>(stun_attribute_type::nonce, nonce.size());
+        auto attr = add_attribute<nonce_attribute>(nonce.size());
 
         std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), nonce.data(), nonce.size());
 
@@ -385,7 +346,7 @@ namespace stunpp
         std::string_view software
     )&& noexcept
     {
-        auto attr = add_attribute<software_attribute>(stun_attribute_type::software, software.size());
+        auto attr = add_attribute<software_attribute>(software.size());
 
         std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), software.data(), software.size());
 
@@ -396,7 +357,7 @@ namespace stunpp
         std::span<std::uint16_t> attributes
     ) && noexcept
     {
-        auto attr = add_attribute<unknown_attribute_values>(stun_attribute_type::unknown_attributes, attributes.size() * sizeof(std::uint16_t));
+        auto attr = add_attribute<unknown_attribute_values>(attributes.size() * sizeof(std::uint16_t));
 
         std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), attributes.data(), attributes.size() * sizeof(std::uint16_t));
 
@@ -404,13 +365,73 @@ namespace stunpp
     }
 
     message_builder&& message_builder::add_integrity(
+        std::string_view username,
+        std::string_view realm,
+        std::string_view password
     ) && noexcept
     {
-        auto attr = add_attribute<message_integrity_attribute>(stun_attribute_type::message_integrity);
+        add_username(username);
+        add_realm(realm);
 
-        (void)attr;
+        auto attr = add_attribute<message_integrity_attribute>();
+        auto& header = get_header();
+        header.message_length = m_buffer_used - sizeof(stun_header);
+        auto buffer_used = m_buffer_used - sizeof(message_integrity_attribute);
 
-        // TODO: Add hash.  Remember m_buffer_user - sizeof(message_integrity_attribute). also header.size
+        // The key for the HMAC depends on whether long-term or short-term
+        // credentials are in use.  For long-term credentials, the key is 16
+        // bytes:
+        // 
+        //          key = MD5(username ":" realm ":" SASLprep(password))
+        // 
+        // That is, the 16-byte key is formed by taking the MD5 hash of the
+        // result of concatenating the following five fields: (1) the username,
+        // with any quotes and trailing nulls removed, as taken from the
+        // USERNAME attribute (in which case SASLprep has already been applied);
+        // (2) a single colon; (3) the realm, with any quotes and trailing nulls
+        // removed; (4) a single colon; and (5) the password, with any trailing
+        // nulls removed and after processing using SASLprep.  For example, if
+        // the username was 'user', the realm was 'realm', and the password was
+        // 'pass', then the 16-byte HMAC key would be the result of performing
+        // an MD5 hash on the string 'user:realm:pass', the resulting hash being
+        // 0x8493fbc53ba582fb4c044c456bdc40eb.
+        std::array<std::byte, 2048> key;
+        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
+        std::memcpy(key.data(), username.data(), username.size());
+        key[username.size()] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
+        key[username.size() + realm.size() + 1] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
+
+        compute_integrity(
+            attr->hmac_sha1,
+            std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
+            std::span<std::byte>{ m_message.data(), buffer_used }
+        );
+
+        return std::move(*this);
+    }
+
+    message_builder&& message_builder::add_integrity(
+        std::string_view password
+    ) && noexcept
+    {
+        auto attr = add_attribute<message_integrity_attribute>();
+        auto& header = get_header();
+        header.message_length = m_buffer_used - sizeof(stun_header);
+        auto buffer_used = m_buffer_used - sizeof(message_integrity_attribute);
+
+        // For short-term credentials:
+        // 
+        //                        key = SASLprep(password)
+        // 
+        // where MD5 is defined in RFC 1321 [RFC1321] and SASLprep() is defined
+        // in RFC 4013 [RFC4013].
+        compute_integrity(
+            attr->hmac_sha1,
+            std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
+            std::span<std::byte>{ m_message.data(), buffer_used }
+        );
 
         return std::move(*this);
     }
@@ -423,12 +444,30 @@ namespace stunpp
 
         auto crc = util::hton(compute_crc32({ m_message.data(), m_buffer_used - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
 
-        auto attr = add_attribute<fingerprint_attribute>(stun_attribute_type::fingerprint);
+        auto attr = add_attribute<fingerprint_attribute>();
 
         attr->value = crc;
 
         header.message_length = m_buffer_used - sizeof(stun_header);
         return { m_message.data(), m_buffer_used };
+    }
+
+    void message_builder::add_username(
+        std::string_view username
+    ) noexcept
+    {
+        auto attr = add_attribute<username_attribute>(username.size());
+
+        std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), username.data(), username.size());
+    }
+
+    void message_builder::add_realm(
+        std::string_view realm
+    ) noexcept
+    {
+        auto attr = add_attribute<realm_attribute>(realm.size());
+
+        std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), realm.data(), realm.size());
     }
 
     std::span<std::byte> message_builder::create() && noexcept

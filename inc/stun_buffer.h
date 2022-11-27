@@ -166,6 +166,7 @@ namespace stunpp
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     struct mapped_address_attribute : stun_attribute
     {
+        inline static constexpr auto c_type = stun_attribute_type::mapped_address;
         std::uint8_t zeros;
         address_family family;
         std::uint16_t port;
@@ -202,6 +203,7 @@ namespace stunpp
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     struct xor_mapped_address_attribute : stun_attribute
     {
+        inline static constexpr auto c_type = stun_attribute_type::xor_mapped_address;
         std::uint8_t zeros;
         address_family family;
 
@@ -229,6 +231,10 @@ namespace stunpp
         SOCKADDR_IN6 address(std::span<std::uint32_t, 3> message_id) const noexcept;
     };
 
+    struct string_view_attribute : stun_attribute
+    {
+        std::string_view value() const noexcept;
+    };
 
     // The USERNAME attribute is used for message integrity.  It identifies
     // the username and password combination used in the message-integrity
@@ -237,9 +243,9 @@ namespace stunpp
     // The value of USERNAME is a variable-length value.  It MUST contain a
     // UTF-8 [RFC3629] encoded sequence of less than 513 bytes, and MUST
     // have been processed using SASLprep [RFC4013].
-    struct username_attribute : stun_attribute
+    struct username_attribute : string_view_attribute
     {
-        std::string_view value() const noexcept;
+        inline static constexpr auto c_type = stun_attribute_type::username;
     };
 
     // The MESSAGE-INTEGRITY attribute contains an HMAC-SHA1 [RFC2104] of
@@ -252,7 +258,8 @@ namespace stunpp
     // all other attributes that follow MESSAGE-INTEGRITY.
     struct message_integrity_attribute : stun_attribute
     {
-        std::array<std::byte, 20> key;
+        inline static constexpr auto c_type = stun_attribute_type::message_integrity;
+        std::array<std::byte, 20> hmac_sha1;
     };
 
     // The FINGERPRINT attribute MAY be present in all STUN messages.  The
@@ -266,6 +273,7 @@ namespace stunpp
     // the message, and thus will appear after MESSAGE-INTEGRITY.
     struct fingerprint_attribute : stun_attribute
     {
+        inline static constexpr auto c_type = stun_attribute_type::fingerprint;
         std::uint32_t value;
     };
 
@@ -289,6 +297,7 @@ namespace stunpp
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     struct error_code_attribute : stun_attribute
     {
+        inline static constexpr auto c_type = stun_attribute_type::error_code;
         std::uint32_t zero_bits : 21;
         std::uint32_t class_bits : 3;
         std::uint32_t number : 8;
@@ -310,9 +319,9 @@ namespace stunpp
     // credentials are being used for authentication.  Presence in certain
     // error responses indicates that the server wishes the client to use a
     // long-term credential for authentication.
-    struct realm_attribute : stun_attribute
+    struct realm_attribute : string_view_attribute
     {
-        std::string_view value() const noexcept;
+        inline static constexpr auto c_type = stun_attribute_type::realm;
     };
 
     // The NONCE attribute may be present in requests and responses.  It
@@ -323,9 +332,9 @@ namespace stunpp
     // 
     // It MUST be less than 128 characters (which can be as long as 763
     // bytes).
-    struct nonce_attribute : stun_attribute
+    struct nonce_attribute : string_view_attribute
     {
-        std::string_view value() const noexcept;
+        inline static constexpr auto c_type = stun_attribute_type::nonce;
     };
 
     // The UNKNOWN-ATTRIBUTES attribute is present only in an error response
@@ -343,7 +352,8 @@ namespace stunpp
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     struct unknown_attribute_values : stun_attribute
     {
-        std::span<std::uint16_t> values() const noexcept;
+        inline static constexpr auto c_type = stun_attribute_type::unknown_attributes;
+        std::span<const std::uint16_t> values() const noexcept;
     };
 
 
@@ -355,9 +365,9 @@ namespace stunpp
     // value of SOFTWARE is variable length.  It MUST be a UTF-8 [RFC3629]
     // encoded sequence of less than 128 characters (which can be as long as
     // 763 bytes).
-    struct software_attribute : stun_attribute
+    struct software_attribute : string_view_attribute
     {
-        std::string_view value() const noexcept;
+        inline static constexpr auto c_type = stun_attribute_type::software;
     };
 
     // The alternate server represents an alternate transport address
@@ -368,6 +378,7 @@ namespace stunpp
     // to that of the source IP address of the request.
     struct alternate_server_attribute : mapped_address_attribute
     {
+        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
     };
 
     struct message_builder
@@ -402,14 +413,12 @@ namespace stunpp
         message_builder&& add_ipv6_address(const SOCKADDR_IN6& addr) && noexcept;
         message_builder&& add_xor_ipv4_address(const SOCKADDR_IN& addr) && noexcept;
         message_builder&& add_xor_ipv6_address(const SOCKADDR_IN6& addr) && noexcept;
-        message_builder&& add_username(std::string_view name) && noexcept;
         message_builder&& add_error_code(stun_error_code error) && noexcept;
-        message_builder&& add_realm(std::string_view realm) && noexcept;
         message_builder&& add_nonce(std::string_view nonce) && noexcept;
         message_builder&& add_software(std::string_view nonce)&& noexcept;
         message_builder&& add_unknown_attributes(std::span<uint16_t> attrs) && noexcept;
-
-        message_builder&& add_integrity() && noexcept;
+        message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) && noexcept;
+        message_builder&& add_integrity(std::string_view password) && noexcept;
         std::span<std::byte> add_fingerprint() && noexcept;
         std::span<std::byte> create() && noexcept;
     private:
@@ -419,20 +428,23 @@ namespace stunpp
         stun_header& get_header() noexcept;
 
         template <typename attribute_type>
-        attribute_type* add_attribute(stun_attribute_type type, size_t data = 0) noexcept
+        attribute_type* add_attribute(size_t data = 0) noexcept
         {
             assert((m_buffer_used + sizeof(attribute_type) + data <= m_message.size()) && "Buffer is too small");
 
             auto attr_start = m_message.data() + m_buffer_used;
 
             auto attr = new(attr_start) attribute_type{};
-            attr->type = type;
+            attr->type = attribute_type::c_type;
             attr->size = sizeof(attribute_type) - sizeof(stun_attribute) + static_cast<std::uint16_t>(data);
 
             m_buffer_used += sizeof(attribute_type) + static_cast<std::uint16_t>(data);
 
             return attr;
         }
+
+        void add_username(std::string_view name) noexcept;
+        void add_realm(std::string_view realm) noexcept;
     };
 
     struct message_reader
