@@ -89,4 +89,14 @@ namespace stunpp
             BCryptDestroyHash(hash_handle);
         }();
 	}
+
+    std::array<uint32_t, 3> generate_id()
+    {
+        std::array<uint32_t, 3> id;
+        auto res = BCryptGenRandom(nullptr, (PUCHAR)id.data(), sizeof(id), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        assert(NT_SUCCESS(res) && "Failed to generate random numbers");
+        std::ignore = res;
+
+        return id;
+    }
 }

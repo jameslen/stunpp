@@ -1,9 +1,9 @@
 #include "stun_buffer.h"
 
 #include <cassert>
+#include <system_error>
 
-#include "win32/message_fingerprint.h"
-
+#include "win32/crypto_functions.h"
 namespace
 {
     std::uint32_t c_magic_cookie = 0x2112A442;
@@ -64,11 +64,11 @@ namespace
     };
 
     std::uint32_t compute_crc32(
-        std::span<std::byte> buffer
+        std::span<const std::byte> buffer
     ) noexcept
     {
         std::uint32_t crc = c_crcMask;
-        for(auto&& byte : buffer)
+        for(auto byte : buffer)
         {
             crc = c_crctable[static_cast<std::uint8_t>(crc) ^ static_cast<std::uint8_t>(byte)] ^ (crc >> 8);
         }
@@ -147,7 +147,7 @@ namespace stunpp
 
     stun_error_code error_code_attribute::error_code() const noexcept
     {
-        return {}; // TODO:
+        return stun_error_code{ class_bits * 100 + number };
     }
 
     std::string_view error_code_attribute::error_message() const noexcept
@@ -173,10 +173,7 @@ namespace stunpp
         header.message_length = 0;
         header.magic_cookie = util::hton(c_magic_cookie);
 
-        for (auto&& byte : header.transaction_id)
-        {
-            byte = (std::uint32_t)rand();
-        }
+        header.transaction_id = generate_id();
 
         m_buffer_used = sizeof(stun_header);
     }
@@ -319,14 +316,20 @@ namespace stunpp
     }
 
     message_builder&& message_builder::add_error_code(
-        stun_error_code /*error*/
+        stun_error_code error
     ) && noexcept
     {
         auto attr = add_attribute<error_code_attribute>();
 
         attr->size = sizeof(error_code_attribute) - sizeof(stun_attribute);
 
-        // TODO: Error
+        auto hundreds = static_cast<uint32_t>(error) / 100;
+        attr->class_bits;
+
+        auto error_value = static_cast<uint32_t>(error) - hundreds;
+        attr->number = error_value;
+
+        attr->zero_bits = 0;
 
         return std::move(*this);
     }
@@ -481,4 +484,229 @@ namespace stunpp
     {
         return *reinterpret_cast<stun_header*>(m_message.data());
     }
+
+    message_reader::message_reader(
+        std::span<const std::byte> buffer
+    ) noexcept :
+        m_message(buffer)
+    {
+    }
+
+    validation_result message_reader::validate() const noexcept
+    {
+        // Start by verifying that the stun header can fit in the buffer
+        if (m_message.size() < sizeof(stun_header))
+        {
+            return validation_result::size_mismatch;
+        }
+
+        auto& header = get_header();
+
+        // TODO: Check the first 2 bits
+
+        // Ensure that this is a stun message by checking the magic cookie
+        if (header.magic_cookie != util::hton(c_magic_cookie))
+        {
+            return validation_result::not_stun_message;
+        }
+
+        // Ensure that the header isn't lying about the size of the full message
+        if (m_message.size() == sizeof(stun_header) && header.message_length != 0)
+        {
+            return validation_result::size_mismatch;
+        }
+
+        // If there are no attributes then this packet is valid.
+        if (header.message_length == 0)
+        {
+            return validation_result::valid;
+        }
+
+        uint16_t size = 0;
+        // TODO: Lifetimes
+        auto attribute = get_first_attribute();
+
+        // Ensure that we don't read past the end of the buffer
+        if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
+        {
+            return validation_result::size_mismatch;
+        }
+
+        validation_result result = validation_result::valid;
+        while (size < header.message_length)
+        {
+            size += attribute->size;
+
+            if (size > header.message_length)
+            {
+                return validation_result::size_mismatch;
+            }
+
+            if (attribute->type == stun_attribute_type::message_integrity)
+            {
+                result = validation_result::integrity_check_needed;
+            }
+            else if (attribute->type == stun_attribute_type::fingerprint)
+            {
+                // We're going to modify the header to be able to recreate the crc without copying the whole packet
+                auto& edit_header = const_cast<stun_header&>(header);
+                auto prev_length = header.message_length;
+                edit_header.message_length = size - sizeof(fingerprint_attribute);
+
+                // TODO: Separate the header in the crc check so we don't have the const_cast
+                auto crc = util::hton(compute_crc32({ m_message.data(), size - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
+
+                edit_header.message_length = prev_length;
+
+                // TODO: Lifetimes
+                auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
+
+                // We ignore all attributes after the fingerprint. So either return validation failed or the result
+                if (fingerprint->value != crc)
+                {
+                       
+                    return validation_result::fingerprint_failed;
+                }
+                else
+                {
+                    return result;
+                }
+            }
+            // TODO: Unknowns
+
+            // Ensure that we don't read past the end of the buffer
+            if (sizeof(stun_header) + size >= m_message.size())
+            {
+                return validation_result::size_mismatch;
+            }
+
+            // TODO: Lifetimes
+            attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+        }
+
+        return result;
+    }
+
+    validation_result message_reader::check_integrity(std::string_view password)
+    {
+        const username_attribute* username_attr{};
+        const realm_attribute* realm_attr{};
+        const message_integrity_attribute* integrity_attr{};
+
+        // TODO: Lifetimes
+        uint16_t size = 0;
+        const stun_attribute* attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header)]);
+
+        // Ensure that we don't read past the end of the buffer
+        if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
+        {
+            return validation_result::size_mismatch;
+        }
+
+        auto& header = get_header();
+        while (size < header.message_length)
+        {
+            size += attribute->size;
+
+            if (attribute->type == stun_attribute_type::username)
+            {
+                username_attr = static_cast<const username_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::realm)
+            {
+                realm_attr = static_cast<const realm_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::message_integrity)
+            {
+                integrity_attr = static_cast<const message_integrity_attribute*>(attribute);
+                break;
+            }
+
+            // Ensure that we don't read past the end of the buffer
+            if (sizeof(stun_header) + size >= m_message.size())
+            {
+                return validation_result::size_mismatch;
+            }
+
+            // TODO: Lifetimes
+            attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+        }
+
+        // If there's no integrity attribute then return valid.
+        if (!integrity_attr)
+        {
+            return validation_result::valid;
+        }
+
+        //TODO: determine short vs long term creds
+        size = size - sizeof(message_integrity_attribute);
+
+        if (!username_attr || !realm_attr)
+        {
+            return validation_result::invalid;
+        }
+
+        auto username = username_attr->value();
+        auto realm = realm_attr->value();
+
+        std::array<std::byte, 2048> key;
+        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
+        std::memcpy(key.data(), username.data(), username.size());
+        key[username.size()] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
+        key[username.size() + realm.size() + 1] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
+
+        auto& edit_header = const_cast<stun_header&>(header);
+        auto prev_length = header.message_length;
+        edit_header.message_length = size;
+
+        std::array<std::byte, 20> hmac;
+
+        // TODO: Separate out header so we don't have to const_cast
+        compute_integrity(
+            hmac,
+            std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
+            std::span<const std::byte>{ m_message.data(), size + sizeof(stun_header)}
+        );
+
+        edit_header.message_length = prev_length;
+
+        if (hmac == integrity_attr->hmac_sha1)
+        {
+            return validation_result::valid;
+        }
+        else
+        {
+            return validation_result::integrity_check_failed;
+        }
+    }
+
+    const stun_attribute* message_reader::get_first_attribute() const noexcept
+    {
+        auto& header = get_header();
+
+        if (header.message_length == 0)
+        {
+            return nullptr;
+        }
+        else
+        {
+            return reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header)]);
+        }
+    }
+
+    const stun_attribute* message_reader::get_next_attibute(const stun_attribute* attr) const noexcept
+    {
+        auto byte_address = reinterpret_cast<const std::byte*>(attr);
+        if (byte_address + attr->size > m_message.data() + m_message.size())
+        {
+            return nullptr;
+        }
+        else
+        {
+            return reinterpret_cast<const stun_attribute*>(byte_address + attr->size);
+        }
+    }
+
 }
