@@ -28,4 +28,5 @@ if(BUILDING_TEST)
 
 	enable_testing()
 	add_subdirectory(tests)
+
 endif()

@@ -13,6 +13,8 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 
+#include "stun_error_category.h"
+
 namespace stunpp
 {
     namespace util
@@ -448,31 +450,24 @@ namespace stunpp
         void add_realm(std::string_view realm) noexcept;
     };
 
-    enum class validation_result : uint32_t
-    {
-        valid,
-        integrity_check_needed,
-        not_stun_message,
-        size_mismatch,
-        fingerprint_failed,
-        integrity_check_failed,
-        invalid
-    };
-
     struct message_reader
     {
+        static std::expected<message_reader, std::error_code> create(
+            std::span<const std::byte> buffer
+        ) noexcept;
+
+        std::error_code check_integrity(std::string_view password);
+
+        const stun_attribute* get_first_attribute() const noexcept;
+        const stun_attribute* get_next_attibute(const stun_attribute* attr) const noexcept;
+
+    private:
         message_reader(
             std::span<const std::byte> buffer
         ) noexcept;
 
-        validation_result validate() const noexcept;
-
-        validation_result check_integrity(std::string_view password);
-
-        const stun_attribute* get_first_attribute();
-        const stun_attribute* get_next_attibute(const stun_attribute* attr);
-
-    private:
+        std::error_code validate() const noexcept;
+     
         std::span<const std::byte> m_message;
 
         const stun_header& get_header() const noexcept;

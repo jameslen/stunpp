@@ -2,11 +2,13 @@
 
 #include <cassert>
 #include <system_error>
+#include <ranges>
+
 
 #include "win32/crypto_functions.h"
 namespace
 {
-    std::uint32_t c_magic_cookie = 0x2112A442;
+    constexpr std::uint32_t c_magic_cookie = 0x2112A442;
 
     constexpr uint16_t make_type(
         stunpp::stun_method method
@@ -64,10 +66,17 @@ namespace
     };
 
     std::uint32_t compute_crc32(
+        const stunpp::stun_header& header,
         std::span<const std::byte> buffer
     ) noexcept
     {
         std::uint32_t crc = c_crcMask;
+
+        for (auto byte : std::span<const std::byte>(reinterpret_cast<const std::byte*>(&header), sizeof(stunpp::stun_header)))
+        {
+            crc = c_crctable[static_cast<std::uint8_t>(crc) ^ static_cast<std::uint8_t>(byte)] ^ (crc >> 8);
+        }
+
         for(auto byte : buffer)
         {
             crc = c_crctable[static_cast<std::uint8_t>(crc) ^ static_cast<std::uint8_t>(byte)] ^ (crc >> 8);
@@ -245,7 +254,6 @@ namespace stunpp
         auto attr = add_attribute<ipv4_mapped_address_attribute>();
 
         attr->family = address_family::ipv4;
-        attr->size = sizeof(ipv4_mapped_address_attribute) - sizeof(stun_attribute);
         attr->port = address.sin_port;
         std::memcpy(attr->address_bytes.data(), &address.sin_addr, attr->address_bytes.size());
 
@@ -259,7 +267,6 @@ namespace stunpp
         auto attr = add_attribute<ipv6_mapped_address_attribute>();
 
         attr->family = address_family::ipv6;
-        attr->size = sizeof(ipv6_mapped_address_attribute) - sizeof(stun_attribute);
         attr->port = address.sin6_port;
         std::memcpy(attr->address_bytes.data(), &address.sin6_addr, attr->address_bytes.size());
 
@@ -273,7 +280,6 @@ namespace stunpp
         auto attr = add_attribute<ipv4_xor_mapped_address_attribute>();
 
         attr->family = address_family::ipv4;
-        attr->size = sizeof(ipv4_xor_mapped_address_attribute) - sizeof(stun_attribute);
 
         std::uint16_t xor_port = address.sin_port ^ util::hton(static_cast<std::uint16_t>(c_magic_cookie >> 16));
         std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
@@ -291,25 +297,22 @@ namespace stunpp
         auto attr = add_attribute<ipv6_xor_mapped_address_attribute>();
 
         attr->family = address_family::ipv6;
-        attr->size = sizeof(ipv6_xor_mapped_address_attribute) - sizeof(stun_attribute);
-        
+
         std::uint16_t xor_port = address.sin6_port ^ util::hton(static_cast<std::uint16_t>(c_magic_cookie >> 16));
         std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
 
-        std::uint32_t magic_cookie = util::hton(c_magic_cookie);
+        constexpr std::uint32_t magic_cookie = util::hton(c_magic_cookie);
 
-        auto src = reinterpret_cast<const std::byte*>(address.sin6_addr.u.Byte);
-        auto dst = attr->address_bytes.data();
-        auto id = reinterpret_cast<std::byte*>(get_header().transaction_id.data());
+        auto src = new(const_cast<UCHAR*>(address.sin6_addr.u.Byte)) std::uint32_t[4];
+        auto dst = new(attr->address_bytes.data()) std::uint32_t[4];
 
-        for (std::uint32_t i = 0; i < 4; ++i)
+        auto& id = get_header().transaction_id;
+
+        std::array<std::uint32_t, 4> xor_data{ magic_cookie, id[0], id[1], id[2] };
+
+        for (auto i = 0; i < 4; ++i)
         {
-            dst[i] = src[i] ^ reinterpret_cast<const std::byte*>(&magic_cookie)[i];
-        }
-
-        for (std::uint32_t i = 0; i < 12; ++i)
-        {
-            dst[i + 4] = src[i + 4] ^ id[i];
+            dst[i] = src[i] ^ xor_data[i];
         }
 
         return std::move(*this);
@@ -320,8 +323,6 @@ namespace stunpp
     ) && noexcept
     {
         auto attr = add_attribute<error_code_attribute>();
-
-        attr->size = sizeof(error_code_attribute) - sizeof(stun_attribute);
 
         auto hundreds = static_cast<uint32_t>(error) / 100;
         attr->class_bits;
@@ -379,7 +380,6 @@ namespace stunpp
         auto attr = add_attribute<message_integrity_attribute>();
         auto& header = get_header();
         header.message_length = m_buffer_used - sizeof(stun_header);
-        auto buffer_used = m_buffer_used - sizeof(message_integrity_attribute);
 
         // The key for the HMAC depends on whether long-term or short-term
         // credentials are in use.  For long-term credentials, the key is 16
@@ -409,7 +409,8 @@ namespace stunpp
         compute_integrity(
             attr->hmac_sha1,
             std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
-            std::span<std::byte>{ m_message.data(), buffer_used }
+            header,
+            std::span<std::byte>{ m_message.data() + sizeof(stun_header), header.message_length }
         );
 
         return std::move(*this);
@@ -422,7 +423,6 @@ namespace stunpp
         auto attr = add_attribute<message_integrity_attribute>();
         auto& header = get_header();
         header.message_length = m_buffer_used - sizeof(stun_header);
-        auto buffer_used = m_buffer_used - sizeof(message_integrity_attribute);
 
         // For short-term credentials:
         // 
@@ -433,7 +433,8 @@ namespace stunpp
         compute_integrity(
             attr->hmac_sha1,
             std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
-            std::span<std::byte>{ m_message.data(), buffer_used }
+            header,
+            std::span<std::byte>{ m_message.data() + sizeof(stun_header), header.message_length }
         );
 
         return std::move(*this);
@@ -445,7 +446,7 @@ namespace stunpp
         auto& header = get_header();
         header.message_length = m_buffer_used - sizeof(stun_header);
 
-        auto crc = util::hton(compute_crc32({ m_message.data(), m_buffer_used - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
+        auto crc = util::hton(compute_crc32(header, { m_message.data(), m_buffer_used - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
 
         auto attr = add_attribute<fingerprint_attribute>();
 
@@ -492,12 +493,27 @@ namespace stunpp
     {
     }
 
-    validation_result message_reader::validate() const noexcept
+    std::expected<message_reader, std::error_code> message_reader::create(
+        std::span<const std::byte> buffer
+    ) noexcept
+    {
+        message_reader reader(buffer);
+
+        auto ec = reader.validate();
+
+        if (ec)
+        {
+            return std::unexpected(ec);
+        }
+        return reader;
+    }
+
+    std::error_code message_reader::validate() const noexcept
     {
         // Start by verifying that the stun header can fit in the buffer
         if (m_message.size() < sizeof(stun_header))
         {
-            return validation_result::size_mismatch;
+            return make_error_code(stun_validation_error::size_mismatch);
         }
 
         auto& header = get_header();
@@ -507,19 +523,19 @@ namespace stunpp
         // Ensure that this is a stun message by checking the magic cookie
         if (header.magic_cookie != util::hton(c_magic_cookie))
         {
-            return validation_result::not_stun_message;
+            return make_error_code(stun_validation_error::not_stun_message);
         }
 
         // Ensure that the header isn't lying about the size of the full message
         if (m_message.size() == sizeof(stun_header) && header.message_length != 0)
         {
-            return validation_result::size_mismatch;
+            return make_error_code(stun_validation_error::size_mismatch);
         }
 
         // If there are no attributes then this packet is valid.
         if (header.message_length == 0)
         {
-            return validation_result::valid;
+            return {};
         }
 
         uint16_t size = 0;
@@ -529,34 +545,26 @@ namespace stunpp
         // Ensure that we don't read past the end of the buffer
         if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
         {
-            return validation_result::size_mismatch;
+            return stun_validation_error::size_mismatch;
         }
 
-        validation_result result = validation_result::valid;
+        stun_validation_error{};
         while (size < header.message_length)
         {
             size += attribute->size;
 
             if (size > header.message_length)
             {
-                return validation_result::size_mismatch;
+                return make_error_code(stun_validation_error::size_mismatch);
             }
 
-            if (attribute->type == stun_attribute_type::message_integrity)
-            {
-                result = validation_result::integrity_check_needed;
-            }
-            else if (attribute->type == stun_attribute_type::fingerprint)
+            if (attribute->type == stun_attribute_type::fingerprint)
             {
                 // We're going to modify the header to be able to recreate the crc without copying the whole packet
-                auto& edit_header = const_cast<stun_header&>(header);
-                auto prev_length = header.message_length;
+                auto edit_header = header;
                 edit_header.message_length = size - sizeof(fingerprint_attribute);
 
-                // TODO: Separate the header in the crc check so we don't have the const_cast
-                auto crc = util::hton(compute_crc32({ m_message.data(), size - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
-
-                edit_header.message_length = prev_length;
+                auto crc = util::hton(compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), size - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
 
                 // TODO: Lifetimes
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
@@ -565,29 +573,26 @@ namespace stunpp
                 if (fingerprint->value != crc)
                 {
                        
-                    return validation_result::fingerprint_failed;
+                    return make_error_code(stun_validation_error::fingerprint_failed);
                 }
-                else
-                {
-                    return result;
-                }
+
+                return {};
             }
-            // TODO: Unknowns
 
             // Ensure that we don't read past the end of the buffer
             if (sizeof(stun_header) + size >= m_message.size())
             {
-                return validation_result::size_mismatch;
+                return make_error_code(stun_validation_error::size_mismatch);
             }
 
             // TODO: Lifetimes
             attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
         }
 
-        return result;
+        return {};
     }
 
-    validation_result message_reader::check_integrity(std::string_view password)
+    std::error_code message_reader::check_integrity(std::string_view password)
     {
         const username_attribute* username_attr{};
         const realm_attribute* realm_attr{};
@@ -600,7 +605,7 @@ namespace stunpp
         // Ensure that we don't read past the end of the buffer
         if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
         {
-            return validation_result::size_mismatch;
+            return make_error_code(stun_validation_error::size_mismatch);
         }
 
         auto& header = get_header();
@@ -625,7 +630,7 @@ namespace stunpp
             // Ensure that we don't read past the end of the buffer
             if (sizeof(stun_header) + size >= m_message.size())
             {
-                return validation_result::size_mismatch;
+                return make_error_code(stun_validation_error::size_mismatch);
             }
 
             // TODO: Lifetimes
@@ -635,15 +640,19 @@ namespace stunpp
         // If there's no integrity attribute then return valid.
         if (!integrity_attr)
         {
-            return validation_result::valid;
+            return make_error_code(stun_validation_error::integrity_attribute_not_found);
         }
 
         //TODO: determine short vs long term creds
         size = size - sizeof(message_integrity_attribute);
 
-        if (!username_attr || !realm_attr)
+        if (!username_attr)
         {
-            return validation_result::invalid;
+            return make_error_code(stun_validation_error::username_attribute_not_found);
+        } 
+        else if(!realm_attr)
+        {
+            return make_error_code(stun_validation_error::realm_attribute_not_found);
         }
 
         auto username = username_attr->value();
@@ -657,28 +666,25 @@ namespace stunpp
         key[username.size() + realm.size() + 1] = std::byte{ ':' };
         std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
-        auto& edit_header = const_cast<stun_header&>(header);
-        auto prev_length = header.message_length;
+        auto edit_header = header;
         edit_header.message_length = size;
 
         std::array<std::byte, 20> hmac;
 
-        // TODO: Separate out header so we don't have to const_cast
         compute_integrity(
             hmac,
             std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
-            std::span<const std::byte>{ m_message.data(), size + sizeof(stun_header)}
+            edit_header,
+            std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
         );
-
-        edit_header.message_length = prev_length;
 
         if (hmac == integrity_attr->hmac_sha1)
         {
-            return validation_result::valid;
+            return {};
         }
         else
         {
-            return validation_result::integrity_check_failed;
+            return make_error_code(stun_validation_error::integrity_check_failed);
         }
     }
 

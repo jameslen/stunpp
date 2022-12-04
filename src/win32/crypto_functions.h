@@ -8,7 +8,12 @@ constexpr inline bool NT_SUCCESS(NTSTATUS status) { return status >= 0; }
 
 namespace stunpp
 {
-	void compute_integrity(std::array<std::byte, 20>& hmac, std::span<const std::byte> key, std::span<const std::byte> data)
+	void compute_integrity(
+        std::array<std::byte, 20>& hmac,
+        std::span<const std::byte> key,
+        const stun_header& header,
+        std::span<const std::byte> data
+    ) noexcept
 	{
         auto md5_key_hash = [&]()
         {
@@ -36,6 +41,9 @@ namespace stunpp
             res = BCryptCreateHash(alg_handle, &hash_handle, reinterpret_cast<PUCHAR>(hash_object_buffer.data()), hash_object_size, nullptr, 0, 0);
             assert(NT_SUCCESS(res) && "Failed to create hash object");
             std::ignore = res;
+
+            res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<stun_header*>(&header)), data.size(), 0);
+            assert(NT_SUCCESS(res) && "Failed to hash data");
 
             res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), data.size(), 0);
             assert(NT_SUCCESS(res) && "Failed to hash data");
@@ -76,6 +84,9 @@ namespace stunpp
             res = BCryptCreateHash(alg_handle, &hash_handle, reinterpret_cast<PUCHAR>(hash_object_buffer.data()), hash_object_size, md5_key_hash.data(), md5_key_hash.size(), 0);
             assert(NT_SUCCESS(res) && "Failed to create hash object");
             std::ignore = res;
+
+            res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<stun_header*>(&header)), data.size(), 0);
+            assert(NT_SUCCESS(res) && "Failed to hash data");
 
             res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), data.size(), 0);
             assert(NT_SUCCESS(res) && "Failed to hash data");
