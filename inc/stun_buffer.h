@@ -33,18 +33,35 @@ namespace stunpp
         }
     }
 
+    enum class stun_method_type : std::uint16_t
+    {
+        request = 0x0000,
+        success_response = 0x0100,
+        error_response = 0x0110,
+        indication = 0x0010,
+    };
+
     enum class stun_method : std::uint16_t
     {
+        // STUN RFC 5389
         reserved0 = 0x0000,
         binding = 0x0001,
         reserved1 = 0x0002,
+
+        // TURN RFC 5766
+        allocate = 0x0003,
+        refresh = 0x0004,
+        send = 0x0006,
+        data = 0x0007,
+        create_permissions = 0x0008,
+        channel_bind = 0x0009,
 
         invalid = 0xFFFF
     };
 
     enum class stun_attribute_type : std::uint16_t
     {
-        // Required Range
+        // STUN RFC 5389 Required Range
         reserved0 = 0x0000,
         mapped_address = 0x0001,
         reserved1 = 0x0002,
@@ -61,7 +78,20 @@ namespace stunpp
         nonce = 0x0015,
         xor_mapped_address = 0x0020,
 
-        // Optional Range
+        // TURN RFC 5766
+        channel_number = 0x000C,
+        lifetime = 0x000D,
+        reserved7 = 0x0010,
+        xor_peer_address = 0x0012,
+        data = 0x0013,
+        xor_relayed_address = 0x0016,
+        even_port = 0x0018,
+        requested_transport = 0x0019,
+        dont_fragment = 0x001A,
+        reserved8 = 0x0021,
+        reservation_token = 0x0022,
+
+        // STUN RFC 5389 Optional Range
         software = 0x0022,
         alternate_server = 0x8023,
         fingerprint = 0x8028,
@@ -77,36 +107,62 @@ namespace stunpp
 
     enum class stun_error_code : std::uint32_t
     {
-        try_alternate = 300,     // The client should contact an alternate server for
-        // this request.  This error response MUST only be sent if the
-        // request included a USERNAME attribute and a valid MESSAGE-
-        // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
-        // code 400 (Bad Request) is suggested.  This error response MUST
-        // be protected with the MESSAGE-INTEGRITY attribute, and receivers
-        // MUST validate the MESSAGE-INTEGRITY of this response before
-        // redirecting themselves to an alternate server.
+        try_alternate = 300,                  // The client should contact an alternate server for
+                                              // this request.  This error response MUST only be sent if the
+                                              // request included a USERNAME attribute and a valid MESSAGE-
+                                              // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
+                                              // code 400 (Bad Request) is suggested.  This error response MUST
+                                              // be protected with the MESSAGE-INTEGRITY attribute, and receivers
+                                              // MUST validate the MESSAGE-INTEGRITY of this response before
+                                              // redirecting themselves to an alternate server.
+                                              
+        bad_request = 400,                    // The request was malformed.  The client SHOULD NOT
+                                              // retry the request without modification from the previous
+                                              // attempt.  The server may not be able to generate a valid
+                                              // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
+                                              // a valid MESSAGE-INTEGRITY attribute on this response.
+                                              
+        unauthorized = 401,                   // The request did not contain the correct
+                                              // credentials to proceed.  The client should retry the request
+                                              // with proper credentials.
+                                              
+        forbidden = 403,                      // The request was valid but cannot be performed due
+                                              // to administrative or similar restrictions.
+                                              
+        unknown_attribute = 420,              // The server received a STUN packet containing
+                                              // a comprehension-required attribute that it did not understand.
+                                              // The server MUST put this unknown attribute in the UNKNOWN-
+                                              // ATTRIBUTE attribute of its error response.
+                                              
+        allocation_mistmatch = 437,           // A request was received by the server that
+                                              // requires an allocation to be in place, but no allocation exists,
+                                              // or a request was received that requires no allocation, but an
+                                              // allocation exists.
+                                              
+        stale_nonce = 438,                    // The NONCE used by the client was no longer valid.
+                                              // The client should retry, using the NONCE provided in the
+                                              // response.
+                                              
+        wrong_credentials = 441,              // The credentials in the(non - Allocate)
+                                              // request do not match those used to create the allocation.
 
-        bad_request = 400,       // The request was malformed.  The client SHOULD NOT
-        // retry the request without modification from the previous
-        // attempt.  The server may not be able to generate a valid
-        // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
-        // a valid MESSAGE-INTEGRITY attribute on this response.
+        unsupported_transport_protocol = 442, // The Allocate request asked the
+                                              // server to use a transport protocol between the serverand the peer
+                                              // that the server does not support.NOTE: This does NOT refer to
+                                              // the transport protocol used in the 5 - tuple.
 
-        unauthorized = 401,     // The request did not contain the correct
-        // credentials to proceed.  The client should retry the request
-        // with proper credentials.
+        allocation_quota_reached = 486,       // No more allocations using this
+                                              // username can be created at the present time.
 
-        unknown_attribute = 420, // The server received a STUN packet containing
-        // a comprehension-required attribute that it did not understand.
-        // The server MUST put this unknown attribute in the UNKNOWN-
-        // ATTRIBUTE attribute of its error response.
+        server_error = 500,                   // Server Error: The server has suffered a temporary error.  The
+                                              // client should try again.
 
-        stale_nonce = 438,       // The NONCE used by the client was no longer valid.
-        // The client should retry, using the NONCE provided in the
-        // response.
-
-        server_error = 500       // Server Error: The server has suffered a temporary error.  The
-        // client should try again.
+        insufficient_capacity = 508,          // The server is unable to carry out the
+                                              // request due to some capacity limit being reached.In an Allocate
+                                              // response, this could be due to the server having no more relayed
+                                              // transport addresses available at that time, having none with the
+                                              // requested properties, or the one that corresponds to the specified
+                                              // reservation token is not available.
     };
 
     // All STUN messages MUST start with a 20 - byte header followed by zero
@@ -130,6 +186,9 @@ namespace stunpp
         std::uint16_t message_length;
         std::uint32_t magic_cookie;
         std::array<std::uint32_t, 3> transaction_id;
+
+        stun_method get_method() const noexcept;
+        stun_method_type get_method_type() const noexcept;
     };
 
     // After the STUN header are zero or more attributes.Each attribute
@@ -382,6 +441,177 @@ namespace stunpp
     struct alternate_server_attribute : mapped_address_attribute
     {
         inline static constexpr auto c_type = stun_attribute_type::alternate_server;
+    };
+
+    struct ipv4_alternate_server_attribute : ipv4_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
+    };
+
+    struct ipv6_alternate_server_attribute : ipv6_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
+    };
+
+    // The CHANNEL-NUMBER attribute contains the number of the channel.  The
+    // value portion of this attribute is 4 bytes long and consists of a 16-
+    // bit unsigned integer, followed by a two-octet RFFU (Reserved For
+    // Future Use) field, which MUST be set to 0 on transmission and MUST be
+    // ignored on reception.
+    // 
+    //    0                   1                   2                   3
+    //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |        Channel Number         |         RFFU = 0              |
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    struct channel_number_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::channel_number;
+
+        std::uint16_t channel_number;
+        std::uint16_t rffu;
+    };
+
+    // The LIFETIME attribute represents the duration for which the server
+    // will maintain an allocation in the absence of a refresh.  The value
+    // portion of this attribute is 4-bytes long and consists of a 32-bit
+    // unsigned integral value representing the number of seconds remaining
+    // until expiration.
+    struct lifetime_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::lifetime;
+
+        std::uint32_t lifetime;
+    };
+
+    // The XOR-PEER-ADDRESS specifies the address and port of the peer as
+    // seen from the TURN server.  (For example, the peer's server-reflexive
+    // transport address if the peer is behind a NAT.)  It is encoded in the
+    // same way as XOR-MAPPED-ADDRESS [RFC5389].
+    struct xor_peer_address_attribute : xor_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_peer_address;
+    };
+
+    struct ipv4_xor_peer_address_attribute : ipv4_xor_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_peer_address;
+    };
+
+    struct ipv6_xor_peer_address_attribute : ipv6_xor_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_peer_address;
+    };
+
+    // The DATA attribute is present in all Send and Data indications.  The
+    // value portion of this attribute is variable length and consists of
+    // the application data (that is, the data that would immediately follow
+    // the UDP header if the data was been sent directly between the client
+    // and the peer).  If the length of this attribute is not a multiple of
+    // 4, then padding must be added after this attribute.
+    struct data_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::data;
+
+        std::span<const std::byte> get_value() const noexcept;
+    };
+
+    // The XOR-RELAYED-ADDRESS is present in Allocate responses.  It
+    // specifies the address and port that the server allocated to the
+    // client.  It is encoded in the same way as XOR-MAPPED-ADDRESS
+    // [RFC5389].
+    struct xor_relayed_address_attribute : mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_relayed_address;
+    };
+
+    struct ipv4_xor_relayed_address_attribute : ipv4_xor_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_relayed_address;
+    };
+
+    struct ipv6_xor_relayed_address_attribute : ipv6_xor_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::xor_relayed_address;
+    };
+
+    // This attribute allows the client to request that the port in the
+    // relayed transport address be even, and (optionally)that the server
+    // reserve the next - higher port number.The value portion of this
+    // attribute is 1 byte long.Its format is :
+    // 
+    // 0
+    // 0 1 2 3 4 5 6 7
+    // + -+-+-+-+-+-+-+-+
+    // | R | RFFU |
+    // +-+-+-+-+-+-+-+-+
+    // 
+    // The value contains a single 1-bit flag:
+    // 
+    // R: If 1, the server is requested to reserve the next-higher port
+    //    number (on the same IP address) for a subsequent allocation.  If
+    //    0, no such reservation is requested.
+    // 
+    // The other 7 bits of the attribute's value must be set to zero on
+    // transmission and ignored on reception.
+    // 
+    // Since the length of this attribute is not a multiple of 4, padding
+    // must immediately follow this attribute.
+    struct even_port_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::even_port;
+
+        std::uint8_t flag;
+        std::uint8_t padding[3];
+    };
+
+    // This attribute is used by the client to request a specific transport
+    // protocol for the allocated transport address.  The value of this
+    // attribute is 4 bytes with the following format:
+    //    0                   1                   2                   3
+    //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |    Protocol   |                    RFFU                       |
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // 
+    // The Protocol field specifies the desired protocol.  The codepoints
+    // used in this field are taken from those allowed in the Protocol field
+    // in the IPv4 header and the NextHeader field in the IPv6 header
+    // [Protocol-Numbers].  This specification only allows the use of
+    // codepoint 17 (User Datagram Protocol).
+    // 
+    // The RFFU field MUST be set to zero on transmission and MUST be
+    // ignored on reception.  It is reserved for future uses.
+    struct requested_transport_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::requested_transport;
+
+        std::uint8_t protocol;
+        std::uint8_t padding[3];
+    };
+
+    // This attribute is used by the client to request that the server set
+    // the DF (Don't Fragment) bit in the IP header when relaying the
+    // application data onward to the peer.  This attribute has no value
+    // part and thus the attribute length field is 0.
+    struct dont_fragment_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::dont_fragment;
+    };
+
+    // The RESERVATION-TOKEN attribute contains a token that uniquely
+    // identifies a relayed transport address being held in reserve by the
+    // server.  The server includes this attribute in a success response to
+    // tell the client about the token, and the client includes this
+    // attribute in a subsequent Allocate request to request the server use
+    // that relayed transport address for the allocation.
+    // 
+    // The attribute value is 8 bytes and contains the token value.
+    struct reservation_token_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::reservation_token;
+
+        std::uint64_t token;
     };
 
     struct message_builder

@@ -9,24 +9,31 @@
 namespace
 {
     constexpr std::uint32_t c_magic_cookie = 0x2112A442;
+    constexpr std::uint16_t c_method_mask = 0x0110;
 
-    constexpr uint16_t make_type(
+    constexpr uint16_t encode_method(
         stunpp::stun_method method
     ) noexcept
     {
         auto stun_method = static_cast<uint16_t>(method) & 0x0FFF;
-        return ((stun_method & 0x000F) | ((stun_method & 0x0070) << 1) | ((stun_method & 0x0380) << 2) | ((stun_method & 0x0C00) << 2));
+        return ((stun_method & 0x000F) | ((stun_method << 1) & 0xE0) | ((stun_method << 2) & 0xE00) | ((stun_method << 2) & 0x3000));
     }
 
-    constexpr bool is_stun_request(stunpp::stun_method msg_type)      noexcept { return (static_cast<uint16_t>(msg_type) & 0x0110) == 0x0000; }
-    constexpr bool is_stun_success_resp(stunpp::stun_method msg_type) noexcept { return (static_cast<uint16_t>(msg_type) & 0x0110) == 0x0100; }
-    constexpr bool is_stun_err_resp(stunpp::stun_method msg_type)     noexcept { return (static_cast<uint16_t>(msg_type) & 0x0110) == 0x0110; }
-    constexpr bool is_stun_indication(stunpp::stun_method msg_type)   noexcept { return (static_cast<uint16_t>(msg_type) & 0x0110) == 0x0010; }
+    constexpr uint16_t encode_message_type(stunpp::stun_method method, stunpp::stun_method_type type) noexcept
+    {
+        return stunpp::util::hton(encode_method(method) | (uint16_t)type);
+    }
 
-    constexpr uint16_t get_stun_request(stunpp::stun_method msg_type)      noexcept { return ((make_type(msg_type) & 0xFEEF)         ); }
-    constexpr uint16_t get_stun_indication(stunpp::stun_method msg_type)   noexcept { return ((make_type(msg_type) & 0xFEEF) | 0x0010); }
-    constexpr uint16_t get_stun_success_resp(stunpp::stun_method msg_type) noexcept { return ((make_type(msg_type) & 0xFEEF) | 0x0100); }
-    constexpr uint16_t get_stun_err_resp(stunpp::stun_method msg_type)     noexcept { return ((make_type(msg_type)         ) | 0x0110); }
+    constexpr stunpp::stun_method_type get_method_type(std::uint16_t message_type) noexcept
+    {
+        return stunpp::stun_method_type{ stunpp::util::hton(message_type) & c_method_mask };
+    }
+    
+    constexpr stunpp::stun_method get_method(std::uint16_t message_type) noexcept
+    {
+        auto stun_method = stunpp::util::hton(message_type) & 0xFEEF;
+        return stunpp::stun_method{ (stun_method & 0x000F) | ((stun_method & 0xE0) >> 1) | ((stun_method & 0xE00) >> 2) | ((stun_method & 0x3000) >> 2) };
+    }
 
     constexpr std::uint32_t c_crcMask = 0xFFFFFFFFUL;
 
@@ -87,6 +94,16 @@ namespace
 
 namespace stunpp
 {
+    stun_method stun_header::get_method() const noexcept
+    {
+        return ::get_method(message_type);
+    }
+
+    stun_method_type stun_header::get_method_type() const noexcept
+    {
+        return ::get_method_type(message_type);
+    }
+
     SOCKADDR_IN ipv4_mapped_address_attribute::address() const noexcept
     {
         SOCKADDR_IN addr;
@@ -171,6 +188,13 @@ namespace stunpp
         return { reinterpret_cast<const std::uint16_t*>(string_start), size };
     }
 
+    std::span<const std::byte> data_attribute::get_value() const noexcept
+    {
+        auto data_start = reinterpret_cast<const std::byte*>(this) + sizeof(data_attribute);
+
+        return { data_start, size };
+    }
+
     message_builder::message_builder(
         std::span<std::byte> buffer
     ) noexcept :
@@ -195,7 +219,7 @@ namespace stunpp
         message_builder builder(buffer);
 
         auto& header = builder.get_header();
-        header.message_type = util::hton(get_stun_request(method));
+        header.message_type = encode_message_type(method, stun_method_type::request);
 
         return builder;
     }
@@ -209,7 +233,7 @@ namespace stunpp
         message_builder builder(buffer);
 
         auto& header = builder.get_header();
-        header.message_type = util::hton(get_stun_success_resp(method));
+        header.message_type = encode_message_type(method, stun_method_type::success_response);
         header.transaction_id[0] = transaction_id[0];
         header.transaction_id[1] = transaction_id[1];
         header.transaction_id[2] = transaction_id[2];
@@ -226,7 +250,7 @@ namespace stunpp
         message_builder builder(buffer);
 
         auto& header = builder.get_header();
-        header.message_type = util::hton(get_stun_err_resp(method));
+        header.message_type = encode_message_type(method, stun_method_type::error_response);
         header.transaction_id[0] = transaction_id[0];
         header.transaction_id[1] = transaction_id[1];
         header.transaction_id[2] = transaction_id[2];
@@ -242,7 +266,7 @@ namespace stunpp
         message_builder builder(buffer);
 
         auto& header = builder.get_header();
-        header.message_type = util::hton(get_stun_indication(method));
+        header.message_type = encode_message_type(method, stun_method_type::indication);
 
         return builder;
     }
@@ -303,7 +327,7 @@ namespace stunpp
 
         constexpr std::uint32_t magic_cookie = util::hton(c_magic_cookie);
 
-        auto src = new(const_cast<UCHAR*>(address.sin6_addr.u.Byte)) std::uint32_t[4];
+        auto src = reinterpret_cast<const std::uint32_t*>(address.sin6_addr.u.Byte);
         auto dst = new(attr->address_bytes.data()) std::uint32_t[4];
 
         auto& id = get_header().transaction_id;
