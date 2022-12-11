@@ -33,6 +33,8 @@ namespace stunpp
         }
     }
 
+    constexpr std::uint32_t c_stun_magic_cookie = 0x2112A442;
+
     enum class stun_method_type : std::uint16_t
     {
         request = 0x0000,
@@ -215,8 +217,12 @@ namespace stunpp
         std::string_view value() const noexcept;
     };
 
+    struct data_base_attribute : stun_attribute
+    {
+    };
+
     template <typename data_t>
-    struct data_view_attribute : stun_attribute
+    struct data_view_attribute : data_base_attribute
     {
         std::span<const data_t> data() const noexcept
         {
@@ -654,7 +660,6 @@ namespace stunpp
             requires std::is_base_of_v<string_view_attribute, attribute_t>
         message_builder& add_attribute(std::string_view value)
         {
-            // TODO: Padding
             auto attr = internal_add_attribute<attribute_t>(value.size());
 
             std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(attribute_t), value.data(), value.size());
@@ -666,7 +671,7 @@ namespace stunpp
             requires std::is_base_of_v<ipv4_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN& address) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>(value.size());
+            auto attr = internal_add_attribute<attribute_t>();
 
             attr->family = address_family::ipv4;
             attr->port = address.sin_port;
@@ -679,7 +684,7 @@ namespace stunpp
             requires std::is_base_of_v<ipv6_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN6& address) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>(value.size());
+            auto attr = internal_add_attribute<attribute_t>();
 
             attr->family = address_family::ipv6;
             attr->port = address.sin6_port;
@@ -690,7 +695,7 @@ namespace stunpp
 
         template<typename attribute_t>
             requires std::is_base_of_v<ipv4_xor_mapped_address_attribute, attribute_t>
-        message_builder& message_builder::add_attribute(
+        message_builder& add_attribute(
             const SOCKADDR_IN& address
         ) noexcept
         {
@@ -698,10 +703,10 @@ namespace stunpp
 
             attr->family = address_family::ipv4;
 
-            std::uint16_t xor_port = address.sin_port ^ util::hton(static_cast<std::uint16_t>(c_magic_cookie >> 16));
+            std::uint16_t xor_port = address.sin_port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
             std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
 
-            std::uint32_t xor_address = address.sin_addr.S_un.S_addr ^ util::hton(c_magic_cookie);
+            std::uint32_t xor_address = address.sin_addr.S_un.S_addr ^ util::hton(c_stun_magic_cookie);
             std::memcpy(attr->address_bytes.data(), &xor_address, attr->address_bytes.size());
 
             return *this;
@@ -709,7 +714,7 @@ namespace stunpp
 
         template<typename attribute_t>
             requires std::is_base_of_v<ipv6_xor_mapped_address_attribute, attribute_t>
-        message_builder& message_builder::add_attribute(
+        message_builder& add_attribute(
             const SOCKADDR_IN6& address
         ) noexcept
         {
@@ -717,10 +722,10 @@ namespace stunpp
 
             attr->family = address_family::ipv6;
 
-            std::uint16_t xor_port = address.sin6_port ^ util::hton(static_cast<std::uint16_t>(c_magic_cookie >> 16));
+            std::uint16_t xor_port = address.sin6_port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
             std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
 
-            constexpr std::uint32_t magic_cookie = util::hton(c_magic_cookie);
+            constexpr std::uint32_t magic_cookie = util::hton(c_stun_magic_cookie);
 
             auto src = reinterpret_cast<const std::uint32_t*>(address.sin6_addr.u.Byte);
             auto dst = new(attr->address_bytes.data()) std::uint32_t[4];
@@ -738,28 +743,25 @@ namespace stunpp
         }
 
         template<typename attribute_t, typename data_t>
-        message_builder& message_builder::add_attribute(
+        message_builder& add_attribute(
             std::span<const data_t> data
         ) noexcept
         {
             auto attr = internal_add_attribute<attribute_t>(data.size_bytes());
 
-            // TODO: This needs to pad as well
-            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), data.data(), data.size() * sizeof(std::data_t));
+            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), data.data(), data.size() * sizeof(data_t));
 
             return *this;
         }
 
         template<typename attribute_t, std::integral data_t>
-        message_builder& message_builder::add_attribute(
+        message_builder& add_attribute(
             data_t data
         ) noexcept
         {
             auto attr = internal_add_attribute<attribute_t>(sizeof(data_t));
 
-            // TODO: need to pad this out to 4 bytes. reservation_token and lifetime should be fine. 
-            //       requested transport and event port might get interesting.
-            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), &data, sizeof(std::data_t));
+            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), &data, sizeof(data_t));
 
             return *this;
         }
@@ -768,17 +770,14 @@ namespace stunpp
             requires requires { 
                 sizeof(attribute_t) == sizeof(stun_attribute); 
                 !std::is_base_of_v<string_view_attribute, attribute_t>;
+                !std::is_base_of_v<data_base_attribute, attribute_t>;
             }
-        message_builder& message_builder::add_attribute() noexcept
+        message_builder& add_attribute() noexcept
         {
             std::ignore = internal_add_attribute<attribute_t>();
 
             return *this;
         }
-
-        // These attributes are only able to be included as part of the integrity attribute
-        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept = delete;
-        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept = delete;
 
         message_builder&& add_error_code(stun_error_code error) && noexcept;
         message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) && noexcept;
@@ -791,11 +790,22 @@ namespace stunpp
 
         stun_header& get_header() noexcept;
 
+        // These attributes are only able to be included as part of the integrity attribute
+        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept;
+        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept;
+
         template <typename attribute_type>
         attribute_type* internal_add_attribute(size_t data = 0) noexcept
         {
-            // TODO: Padding affects this too
-            assert((m_buffer_used + sizeof(attribute_type) + data <= m_message.size()) && "Buffer is too small");
+            std::uint16_t padded_size = sizeof(attribute_type) + static_cast<std::uint16_t>(data);
+
+            std::uint16_t remainder = padded_size % 4;
+            if (remainder != 0)
+            {
+                padded_size += (4 - remainder);
+            }
+
+            assert((m_buffer_used + padded_size <= m_message.size()) && "Buffer is too small");
 
             auto attr_start = m_message.data() + m_buffer_used;
 
@@ -803,21 +813,18 @@ namespace stunpp
             attr->type = attribute_type::c_type;
             attr->size = sizeof(attribute_type) - sizeof(stun_attribute) + static_cast<std::uint16_t>(data);
 
-            // TODO: Padding affects this too
-            m_buffer_used += sizeof(attribute_type) + static_cast<std::uint16_t>(data);
+            m_buffer_used += padded_size;
+
+            // Zero out any padding
+            if (remainder != 0)
+            {
+                std::memset(m_message.data() + m_buffer_used - remainder, 0, remainder);
+            }
 
             return attr;
         }
     };
-
-    void test()
-    {
-        std::array<std::byte, 1500> packet;
-        message_builder builder(packet);
-
-        builder.add_attribute<software_attribute>("digi");
-    }
-
+ 
     struct message_reader
     {
         static std::expected<message_reader, std::error_code> create(

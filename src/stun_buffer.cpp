@@ -8,7 +8,6 @@
 #include "win32/crypto_functions.h"
 namespace
 {
-    constexpr std::uint32_t c_magic_cookie = 0x2112A442;
     constexpr std::uint16_t c_method_mask = 0x0110;
 
     constexpr uint16_t encode_method(
@@ -21,18 +20,18 @@ namespace
 
     constexpr uint16_t encode_message_type(stunpp::stun_method method, stunpp::stun_method_type type) noexcept
     {
-        return stunpp::util::hton(encode_method(method) | (uint16_t)type);
+        return stunpp::util::hton<std::uint16_t>(encode_method(method) | (uint16_t)type);
     }
 
     constexpr stunpp::stun_method_type get_method_type(std::uint16_t message_type) noexcept
     {
-        return stunpp::stun_method_type{ stunpp::util::hton(message_type) & c_method_mask };
+        return stunpp::stun_method_type(stunpp::util::hton(message_type) & c_method_mask);
     }
     
     constexpr stunpp::stun_method get_method(std::uint16_t message_type) noexcept
     {
         auto stun_method = stunpp::util::hton(message_type) & 0xFEEF;
-        return stunpp::stun_method{ (stun_method & 0x000F) | ((stun_method & 0xE0) >> 1) | ((stun_method & 0xE00) >> 2) | ((stun_method & 0x3000) >> 2) };
+        return stunpp::stun_method((stun_method & 0x000F) | ((stun_method & 0xE0) >> 1) | ((stun_method & 0xE00) >> 2) | ((stun_method & 0x3000) >> 2));
     }
 
     constexpr std::uint32_t c_crcMask = 0xFFFFFFFFUL;
@@ -125,7 +124,7 @@ namespace stunpp
     uint16_t xor_mapped_address_attribute::port() const noexcept
     {
         std::uint16_t port = std::bit_cast<std::uint16_t>(port_bytes);
-        return port ^ util::hton(static_cast<std::uint16_t>(c_magic_cookie >> 16));
+        return port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
     }
 
     SOCKADDR_IN ipv4_xor_mapped_address_attribute::address() const noexcept
@@ -133,7 +132,7 @@ namespace stunpp
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
         std::memcpy(&addr.sin_addr.S_un.S_addr, address_bytes.data(), address_bytes.size());
-        addr.sin_addr.S_un.S_addr ^= util::hton(c_magic_cookie);
+        addr.sin_addr.S_un.S_addr ^= util::hton(c_stun_magic_cookie);
         addr.sin_port = port();
         return addr;
     }
@@ -144,7 +143,7 @@ namespace stunpp
         addr.sin6_family = AF_INET6;
         std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
 
-        std::uint32_t magic_cookie = util::hton(c_magic_cookie);
+        std::uint32_t magic_cookie = util::hton(c_stun_magic_cookie);
         
         auto src = address_bytes.data();
         auto dst = reinterpret_cast<std::byte*>(addr.sin6_addr.u.Byte);
@@ -181,20 +180,6 @@ namespace stunpp
         return {}; // TODO:
     }
 
-    std::span<const std::uint16_t> unknown_attribute_values::values() const noexcept
-    {
-        auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
-
-        return { reinterpret_cast<const std::uint16_t*>(string_start), size };
-    }
-
-    std::span<const std::byte> data_attribute::get_value() const noexcept
-    {
-        auto data_start = reinterpret_cast<const std::byte*>(this) + sizeof(data_attribute);
-
-        return { data_start, size };
-    }
-
     message_builder::message_builder(
         std::span<std::byte> buffer
     ) noexcept :
@@ -204,7 +189,7 @@ namespace stunpp
 
         auto& header = get_header();
         header.message_length = 0;
-        header.magic_cookie = util::hton(c_magic_cookie);
+        header.magic_cookie = util::hton(c_stun_magic_cookie);
 
         header.transaction_id = generate_id();
 
@@ -420,16 +405,18 @@ namespace stunpp
 
         auto& header = get_header();
 
-        // TODO: Check the first 2 bits
-
         // Ensure that this is a stun message by checking the magic cookie
-        if (header.magic_cookie != util::hton(c_magic_cookie))
+        if (header.magic_cookie != util::hton(c_stun_magic_cookie))
         {
             return make_error_code(stun_validation_error::not_stun_message);
         }
 
         // Ensure that the header isn't lying about the size of the full message
         if (m_message.size() == sizeof(stun_header) && header.message_length != 0)
+        {
+            return make_error_code(stun_validation_error::size_mismatch);
+        }
+        else if (header.message_length + sizeof(stun_header) > m_message.size())
         {
             return make_error_code(stun_validation_error::size_mismatch);
         }
@@ -441,7 +428,7 @@ namespace stunpp
         }
 
         uint16_t size = 0;
-        // TODO: Lifetimes
+
         auto attribute = get_first_attribute();
 
         // Ensure that we don't read past the end of the buffer
@@ -450,13 +437,25 @@ namespace stunpp
             return stun_validation_error::size_mismatch;
         }
 
-        stun_validation_error{};
         while (size < header.message_length)
         {
-            size += attribute->size;
+            auto padded_size = attribute->size;
+
+            std::uint16_t remainder = padded_size % 4;
+            if (remainder != 0)
+            {
+                padded_size += (4 - remainder);
+            }
+
+            size += padded_size;
 
             if (size > header.message_length)
             {
+                return make_error_code(stun_validation_error::size_mismatch);
+            }
+            else if (sizeof(stun_header) + size >= m_message.size())
+            {
+                // Ensure that we don't read past the end of the buffer
                 return make_error_code(stun_validation_error::size_mismatch);
             }
 
@@ -468,7 +467,6 @@ namespace stunpp
 
                 auto crc = util::hton(compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), size - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
 
-                // TODO: Lifetimes
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
 
                 // We ignore all attributes after the fingerprint. So either return validation failed or the result
@@ -479,12 +477,6 @@ namespace stunpp
                 }
 
                 return {};
-            }
-
-            // Ensure that we don't read past the end of the buffer
-            if (sizeof(stun_header) + size >= m_message.size())
-            {
-                return make_error_code(stun_validation_error::size_mismatch);
             }
 
             // TODO: Lifetimes
