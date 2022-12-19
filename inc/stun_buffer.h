@@ -4,6 +4,7 @@
 #include <array>
 #include <bit>
 #include <cassert>
+#include <compare>
 #include <expected>
 #include <memory_resource>
 #include <span>
@@ -13,28 +14,54 @@
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 
+#include "network_order_storage.h"
 #include "stun_error_category.h"
 
 namespace stunpp
 {
-    namespace util
+    using net_uint16_t = util::network_ordered<std::uint16_t>;
+    using host_uint16_t = util::host_ordered<std::uint16_t>;
+
+    using net_uint32_t = util::network_ordered<std::uint32_t>;
+    using host_uint32_t = util::host_ordered<std::uint32_t>;
+
+    constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
+
+    namespace detail
     {
-        template <typename T>
-        constexpr T hton(T val)
+        void xor_map_ipv6_address(
+            std::span<std::uint32_t, 4> dst,
+            std::span<const std::uint32_t, 4> src,
+            std::span<const uint32_t, 3> id
+        ) noexcept;
+
+        template<typename T>
+        std::byte* get_bytes_after(T* ptr)
         {
-            if constexpr (std::endian::native == std::endian::little)
-            {
-                return std::byteswap(val);
-            }
-            else
-            {
-                return val;
-            }
+            return retinterpret_cast<std::byte*>(ptr) + sizeof(T);
+        }
+
+        template<typename T>
+        const std::byte* get_bytes_after(const T* ptr)
+        {
+            return retinterpret_cast<const std::byte*>(ptr) + sizeof(T);
+        }
+
+        template<typename data_t, typename T>
+        data_t* get_bytes_after_as(T* ptr)
+        {
+            return reinterpret_cast<data_t*>(get_bytes_after(ptr));
+        }
+
+        template<typename data_t, typename T>
+        const data_t* get_bytes_after_as(const T* ptr)
+        {
+            return reinterpret_cast<const data_t*>(get_bytes_after(ptr));
         }
     }
 
-    constexpr std::uint32_t c_stun_magic_cookie = 0x2112A442;
-
+    // THe method's type and method are not stored pre-converted to netowrk 
+    // order because they have to be combined/parsed apart.
     enum class stun_method_type : std::uint16_t
     {
         request = 0x0000,
@@ -61,44 +88,46 @@ namespace stunpp
         invalid = 0xFFFF
     };
 
+    // These are pre-converted to network order to make storing/reading
+    // easier
     enum class stun_attribute_type : std::uint16_t
     {
         // STUN RFC 5389 Required Range
-        reserved0 = 0x0000,
-        mapped_address = 0x0001,
-        reserved1 = 0x0002,
-        reserved2 = 0x0003,
-        reserved3 = 0x0004,
-        reserved4 = 0x0005,
-        username = 0x0006,
-        reserved5 = 0x0007,
-        message_integrity = 0x0008,
-        error_code = 0x0009,
-        unknown_attributes = 0x000A,
-        reserved6 = 0x000B,
-        realm = 0x0014,
-        nonce = 0x0015,
-        xor_mapped_address = 0x0020,
+        reserved0           = util::hton<std::uint16_t>(0x0000),
+        mapped_address      = util::hton<std::uint16_t>(0x0001),
+        reserved1           = util::hton<std::uint16_t>(0x0002),
+        reserved2           = util::hton<std::uint16_t>(0x0003),
+        reserved3           = util::hton<std::uint16_t>(0x0004),
+        reserved4           = util::hton<std::uint16_t>(0x0005),
+        username            = util::hton<std::uint16_t>(0x0006),
+        reserved5           = util::hton<std::uint16_t>(0x0007),
+        message_integrity   = util::hton<std::uint16_t>(0x0008),
+        error_code          = util::hton<std::uint16_t>(0x0009),
+        unknown_attributes  = util::hton<std::uint16_t>(0x000A),
+        reserved6           = util::hton<std::uint16_t>(0x000B),
+        realm               = util::hton<std::uint16_t>(0x0014),
+        nonce               = util::hton<std::uint16_t>(0x0015),
+        xor_mapped_address  = util::hton<std::uint16_t>(0x0020),
 
         // TURN RFC 5766
-        channel_number = 0x000C,
-        lifetime = 0x000D,
-        reserved7 = 0x0010,
-        xor_peer_address = 0x0012,
-        data = 0x0013,
-        xor_relayed_address = 0x0016,
-        even_port = 0x0018,
-        requested_transport = 0x0019,
-        dont_fragment = 0x001A,
-        reserved8 = 0x0021,
-        reservation_token = 0x0022,
+        channel_number      = util::hton<std::uint16_t>(0x000C),
+        lifetime            = util::hton<std::uint16_t>(0x000D),
+        reserved7           = util::hton<std::uint16_t>(0x0010),
+        xor_peer_address    = util::hton<std::uint16_t>(0x0012),
+        data                = util::hton<std::uint16_t>(0x0013),
+        xor_relayed_address = util::hton<std::uint16_t>(0x0016),
+        even_port           = util::hton<std::uint16_t>(0x0018),
+        requested_transport = util::hton<std::uint16_t>(0x0019),
+        dont_fragment       = util::hton<std::uint16_t>(0x001A),
+        reserved8           = util::hton<std::uint16_t>(0x0021),
+        reservation_token   = util::hton<std::uint16_t>(0x0022),
 
         // STUN RFC 5389 Optional Range
-        software = 0x0022,
-        alternate_server = 0x8023,
-        fingerprint = 0x8028,
+        software            = util::hton<std::uint16_t>(0x0022),
+        alternate_server    = util::hton<std::uint16_t>(0x8023),
+        fingerprint         = util::hton<std::uint16_t>(0x8028),
 
-        invalid = 0xFFFF
+        invalid             = 0xFFFF
     };
 
     enum class address_family : std::uint8_t
@@ -184,14 +213,16 @@ namespace stunpp
     // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     struct stun_header
     {
-        std::uint16_t message_type;
-        std::uint16_t message_length;
-        std::uint32_t magic_cookie;
+        net_uint16_t message_type;
+        net_uint16_t message_length;
+        net_uint32_t magic_cookie;
         std::array<std::uint32_t, 3> transaction_id;
 
         stun_method get_method() const noexcept;
         stun_method_type get_method_type() const noexcept;
     };
+
+    //constexpr auto size = sizeof(stun_header);
 
     // After the STUN header are zero or more attributes.Each attribute
     // MUST be TLV encoded, with a 16 - bit type, 16 - bit length, and value.
@@ -209,7 +240,7 @@ namespace stunpp
     struct stun_attribute
     {
         stun_attribute_type type;
-        std::uint16_t size;
+        net_uint16_t size;
     };
 
     struct string_view_attribute : stun_attribute
@@ -226,9 +257,7 @@ namespace stunpp
     {
         std::span<const data_t> data() const noexcept
         {
-            auto data_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
-
-            return { data_start, size };
+            return { detail::get_bytes_after_as<const data_t>(this), static_cast<host_uint16_t>(size) };
         }
     };
 
@@ -253,7 +282,7 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::mapped_address;
         std::uint8_t zeros;
         address_family family;
-        std::uint16_t port;
+        net_uint16_t port;
     };
 
     // Specific type for ipv4 addresses
@@ -294,15 +323,16 @@ namespace stunpp
         // X-Port is computed by taking the mapped port in host byte order,
         // XOR'ing it with the most significant 16 bits of the magic cookie, and
         // then the converting the result to network byte order.
-        std::array<std::byte, 2> port_bytes;
+        net_uint16_t port_bytes;
 
-        std::uint16_t port() const noexcept;
+        net_uint16_t port() const noexcept;
     };
 
     // Specific type for ipv4 addresses
     struct ipv4_xor_mapped_address_attribute : xor_mapped_address_attribute
     {
-        std::array<std::byte, 4> address_bytes;
+        // Storing as a uint32_t to make xoring with the magic cookie efficient
+        std::uint32_t address_bytes;
 
         SOCKADDR_IN address() const noexcept;
     };
@@ -310,7 +340,8 @@ namespace stunpp
     // Specific type for ipv6 addresses
     struct ipv6_xor_mapped_address_attribute : xor_mapped_address_attribute
     {
-        std::array<std::byte, 16> address_bytes;
+        // Storing as a uint32_t to make xoring with the magic cookie and id efficient
+        std::array<std::uint32_t, 4> address_bytes;
 
         SOCKADDR_IN6 address(std::span<std::uint32_t, 3> message_id) const noexcept;
     };
@@ -353,7 +384,7 @@ namespace stunpp
     struct fingerprint_attribute : stun_attribute
     {
         inline static constexpr auto c_type = stun_attribute_type::fingerprint;
-        std::uint32_t value;
+        net_uint32_t value;
     };
 
     // The ERROR-CODE attribute is used in error response messages.  It
@@ -484,8 +515,7 @@ namespace stunpp
     {
         inline static constexpr auto c_type = stun_attribute_type::channel_number;
 
-        std::uint16_t channel_number;
-        std::uint16_t rffu;
+        net_uint16_t channel_number;
     };
 
     // The LIFETIME attribute represents the duration for which the server
@@ -497,7 +527,7 @@ namespace stunpp
     {
         inline static constexpr auto c_type = stun_attribute_type::lifetime;
 
-        std::uint32_t lifetime;
+        net_uint32_t lifetime;
     };
 
     // The XOR-PEER-ADDRESS specifies the address and port of the peer as
@@ -554,10 +584,9 @@ namespace stunpp
     // reserve the next - higher port number.The value portion of this
     // attribute is 1 byte long.Its format is :
     // 
-    // 0
-    // 0 1 2 3 4 5 6 7
-    // + -+-+-+-+-+-+-+-+
-    // | R | RFFU |
+    //  0 1 2 3 4 5 6 7
+    // +-+-+-+-+-+-+-+-+
+    // |R|    RFFU     |
     // +-+-+-+-+-+-+-+-+
     // 
     // The value contains a single 1-bit flag:
@@ -576,7 +605,6 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::even_port;
 
         std::uint8_t flag;
-        std::uint8_t padding[3];
     };
 
     // This attribute is used by the client to request a specific transport
@@ -601,7 +629,6 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::requested_transport;
 
         std::uint8_t protocol;
-        std::uint8_t padding[3];
     };
 
     // This attribute is used by the client to request that the server set
@@ -625,7 +652,7 @@ namespace stunpp
     {
         inline static constexpr auto c_type = stun_attribute_type::reservation_token;
 
-        std::uint64_t token;
+        std::array<std::byte, 8> token;
     };
 
     struct message_builder
@@ -641,13 +668,14 @@ namespace stunpp
 
         static message_builder create_success_response(
             stun_method method,
-            std::span<std::uint32_t, 3> transaction_id,
+            const std::array<std::uint32_t, 3>& transaction_id,
             std::span<std::byte> buffer
         ) noexcept;
 
         static message_builder create_error_response(
             stun_method method,
-            std::span<std::uint32_t, 3> transaction_id,
+            const std::array<std::uint32_t, 3>& transaction_id,
+            stun_error_code error,
             std::span<std::byte> buffer
         ) noexcept;
 
@@ -658,7 +686,7 @@ namespace stunpp
 
         template<typename attribute_t>
             requires std::is_base_of_v<string_view_attribute, attribute_t>
-        message_builder& add_attribute(std::string_view value)
+        message_builder& add_attribute(std::string_view value) noexcept
         {
             auto attr = internal_add_attribute<attribute_t>(value.size());
 
@@ -725,19 +753,13 @@ namespace stunpp
             std::uint16_t xor_port = address.sin6_port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
             std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
 
-            constexpr std::uint32_t magic_cookie = util::hton(c_stun_magic_cookie);
+            constexpr net_uint32_t magic_cookie = c_stun_magic_cookie;
 
-            auto src = reinterpret_cast<const std::uint32_t*>(address.sin6_addr.u.Byte);
-            auto dst = new(attr->address_bytes.data()) std::uint32_t[4];
-
+            auto src = reinterpret_cast<const std::array<const std::uint32_t, 4>*>(address.sin6_addr.u.Byte);
+            
             auto& id = get_header().transaction_id;
 
-            std::array<std::uint32_t, 4> xor_data{ magic_cookie, id[0], id[1], id[2] };
-
-            for (auto i = 0; i < 4; ++i)
-            {
-                dst[i] = src[i] ^ xor_data[i];
-            }
+            detail::xor_map_ipv6_address(attr->address_bytes, *src, id);
 
             return *this;
         }
@@ -779,7 +801,6 @@ namespace stunpp
             return *this;
         }
 
-        message_builder&& add_error_code(stun_error_code error) && noexcept;
         message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) && noexcept;
         message_builder&& add_integrity(std::string_view password) && noexcept;
         std::span<std::byte> add_fingerprint() && noexcept;
@@ -793,6 +814,7 @@ namespace stunpp
         // These attributes are only able to be included as part of the integrity attribute
         template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept;
         template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept;
+        void add_error_code(stun_error_code error) noexcept;
 
         template <typename attribute_type>
         attribute_type* internal_add_attribute(size_t data = 0) noexcept
@@ -811,7 +833,7 @@ namespace stunpp
 
             auto attr = new(attr_start) attribute_type{};
             attr->type = attribute_type::c_type;
-            attr->size = sizeof(attribute_type) - sizeof(stun_attribute) + static_cast<std::uint16_t>(data);
+            attr->size = host_uint16_t{ sizeof(attribute_type) - sizeof(stun_attribute) + static_cast<std::uint16_t>(data) };
 
             m_buffer_used += padded_size;
 
@@ -824,6 +846,8 @@ namespace stunpp
             return attr;
         }
     };
+
+    
  
     struct message_reader
     {
@@ -831,20 +855,34 @@ namespace stunpp
             std::span<const std::byte> buffer
         ) noexcept;
 
+        bool has_integrity() const noexcept { return m_integrity != nullptr; }
+        const username_attribute* get_username() const noexcept { return m_username; }
+        const realm_attribute* get_realm() const noexcept { return m_realm; }
+        const nonce_attribute* get_nonce() const noexcept { return m_nonce; }
         std::error_code check_integrity(std::string_view password);
 
-        const stun_attribute* get_first_attribute() const noexcept;
-        const stun_attribute* get_next_attibute(const stun_attribute* attr) const noexcept;
+        // TODO: Need to make a Forward_iterator type for this.
+        inline auto begin() const noexcept { return m_begin; }
+        inline auto end() const noexcept { return m_end; }
 
     private:
         message_reader(
             std::span<const std::byte> buffer
         ) noexcept;
 
-        std::error_code validate() const noexcept;
+        const stun_header& get_header() const noexcept;
+        const stun_attribute* get_next_attibute(const stun_attribute* attr) const noexcept;
+
+        std::error_code validate() noexcept;
      
         std::span<const std::byte> m_message;
+        const stun_attribute* m_begin;
+        const stun_attribute* m_end;
 
-        const stun_header& get_header() const noexcept;
+        const username_attribute* m_username;
+        const realm_attribute* m_realm;
+        const nonce_attribute* m_nonce;
+        const message_integrity_attribute* m_integrity;
+
     };
 }

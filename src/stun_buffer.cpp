@@ -10,28 +10,48 @@ namespace
 {
     constexpr std::uint16_t c_method_mask = 0x0110;
 
+    template <uint32_t round_value, std::integral value_t>
+    constexpr [[nodiscard]] stunpp::util::host_ordered<value_t> round(stunpp::util::host_ordered<value_t> value) noexcept
+    {
+        value_t remainder = value % round_value;
+        if (remainder != 0)
+        {
+            value += (round_value - remainder);
+        }
+        return value;
+    }
+
     constexpr uint16_t encode_method(
         stunpp::stun_method method
     ) noexcept
     {
         auto stun_method = static_cast<uint16_t>(method) & 0x0FFF;
-        return ((stun_method & 0x000F) | ((stun_method << 1) & 0xE0) | ((stun_method << 2) & 0xE00) | ((stun_method << 2) & 0x3000));
+        return ((stun_method       & 0x000F) |
+               ((stun_method << 1) & 0x00E0) |
+               ((stun_method << 2) & 0x0E00) |
+               ((stun_method << 2) & 0x3000)
+        );
     }
 
-    constexpr uint16_t encode_message_type(stunpp::stun_method method, stunpp::stun_method_type type) noexcept
+    constexpr stunpp::net_uint16_t encode_message_type(stunpp::stun_method method, stunpp::stun_method_type type) noexcept
     {
-        return stunpp::util::hton<std::uint16_t>(encode_method(method) | (uint16_t)type);
+        return stunpp::host_uint16_t(encode_method(method) | static_cast<uint16_t>(type));
     }
 
-    constexpr stunpp::stun_method_type get_method_type(std::uint16_t message_type) noexcept
+    constexpr stunpp::stun_method_type get_method_type(stunpp::net_uint16_t message_type) noexcept
     {
-        return stunpp::stun_method_type(stunpp::util::hton(message_type) & c_method_mask);
+        return stunpp::stun_method_type(stunpp::host_uint16_t(message_type) & c_method_mask);
     }
     
-    constexpr stunpp::stun_method get_method(std::uint16_t message_type) noexcept
+    constexpr stunpp::stun_method get_method(stunpp::net_uint16_t message_type) noexcept
     {
-        auto stun_method = stunpp::util::hton(message_type) & 0xFEEF;
-        return stunpp::stun_method((stun_method & 0x000F) | ((stun_method & 0xE0) >> 1) | ((stun_method & 0xE00) >> 2) | ((stun_method & 0x3000) >> 2));
+        auto stun_method = stunpp::host_uint16_t(message_type) & 0xFEEF;
+        return stunpp::stun_method(
+                 (stun_method & 0x000F)       |
+                ((stun_method & 0x00E0) >> 1) |
+                ((stun_method & 0x0E00) >> 2) |
+                ((stun_method & 0x3000) >> 2)
+        );
     }
 
     constexpr std::uint32_t c_crcMask = 0xFFFFFFFFUL;
@@ -71,7 +91,7 @@ namespace
         0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94, 0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d,
     };
 
-    std::uint32_t compute_crc32(
+    stunpp::host_uint32_t compute_crc32(
         const stunpp::stun_header& header,
         std::span<const std::byte> buffer
     ) noexcept
@@ -93,6 +113,24 @@ namespace
 
 namespace stunpp
 {
+    namespace detail
+    {
+        void xor_map_ipv6_address(
+            std::span<std::uint32_t, 4> dst,
+            std::span<const std::uint32_t, 4> src,
+            std::span<const uint32_t, 3> id
+        ) noexcept
+        {
+            net_uint32_t magic_cookie = c_stun_magic_cookie;
+            std::array<std::uint32_t, 4> xor_data{ magic_cookie.read(), id[0], id[1], id[2] };
+
+            for (auto i = 0; i < 4; ++i)
+            {
+                dst[i] = src[i] ^ xor_data[i];
+            }
+        }
+    }
+
     stun_method stun_header::get_method() const noexcept
     {
         return ::get_method(message_type);
@@ -108,7 +146,7 @@ namespace stunpp
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
         std::memcpy(&addr.sin_addr.S_un.S_addr, address_bytes.data(), address_bytes.size());
-        addr.sin_port = port;
+        addr.sin_port = port.read();;
         return addr;
     }
 
@@ -117,23 +155,22 @@ namespace stunpp
         SOCKADDR_IN6 addr{};
         addr.sin6_family = AF_INET6;
         std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
-        addr.sin6_port = port;
+        addr.sin6_port = port.read();
         return addr;
     }
 
-    uint16_t xor_mapped_address_attribute::port() const noexcept
+    net_uint16_t xor_mapped_address_attribute::port() const noexcept
     {
-        std::uint16_t port = std::bit_cast<std::uint16_t>(port_bytes);
-        return port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
+        return port_bytes ^ host_uint16_t(c_stun_magic_cookie >> 16);
     }
 
     SOCKADDR_IN ipv4_xor_mapped_address_attribute::address() const noexcept
     {
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
-        std::memcpy(&addr.sin_addr.S_un.S_addr, address_bytes.data(), address_bytes.size());
-        addr.sin_addr.S_un.S_addr ^= util::hton(c_stun_magic_cookie);
-        addr.sin_port = port();
+        std::memcpy(&addr.sin_addr.S_un.S_addr, &address_bytes, sizeof(address_bytes));
+        addr.sin_addr.S_un.S_addr ^= c_stun_magic_cookie;
+        addr.sin_port = port().read();
         return addr;
     }
 
@@ -143,31 +180,17 @@ namespace stunpp
         addr.sin6_family = AF_INET6;
         std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
 
-        std::uint32_t magic_cookie = util::hton(c_stun_magic_cookie);
-        
-        auto src = address_bytes.data();
-        auto dst = reinterpret_cast<std::byte*>(addr.sin6_addr.u.Byte);
-        auto id = reinterpret_cast<std::byte*>(message_id.data());
+        auto dst = reinterpret_cast<std::array<std::uint32_t, 4>*>(addr.sin6_addr.u.Byte);
 
-        for (std::uint32_t i = 0; i < 4; ++i)
-        {
-            dst[i] = src[i] ^ reinterpret_cast<const std::byte*>(&magic_cookie)[i];
-        }
+        detail::xor_map_ipv6_address(*dst, address_bytes, message_id);
 
-        for (std::uint32_t i = 0; i < 12; ++i)
-        {
-            dst[i + 4] = src[i + 4] ^ id[i];
-        }
-
-        addr.sin6_port = port();
+        addr.sin6_port = port().read();
         return addr;
     }
 
     std::string_view string_view_attribute::value() const noexcept
     {
-        auto string_start = reinterpret_cast<const std::byte*>(this) + sizeof(stun_attribute);
-
-        return { reinterpret_cast<const char*>(string_start), size };
+        return { detail::get_bytes_after_as<const char>(this), static_cast<host_uint16_t>(size) };
     }
 
     stun_error_code error_code_attribute::error_code() const noexcept
@@ -188,8 +211,8 @@ namespace stunpp
         assert(buffer.size() > sizeof(stun_header) && "Buffer must be large enough for at least the STUN message header.");
 
         auto& header = get_header();
-        header.message_length = 0;
-        header.magic_cookie = util::hton(c_stun_magic_cookie);
+        header.message_length = util::network_order_from_value<std::uint16_t>(0);
+        header.magic_cookie = host_uint32_t(c_stun_magic_cookie);
 
         header.transaction_id = generate_id();
 
@@ -211,7 +234,7 @@ namespace stunpp
 
     message_builder message_builder::create_success_response(
         stun_method method,
-        std::span<std::uint32_t, 3> transaction_id,
+        const std::array<std::uint32_t, 3>& transaction_id,
         std::span<std::byte> buffer
     ) noexcept
     {
@@ -219,16 +242,15 @@ namespace stunpp
 
         auto& header = builder.get_header();
         header.message_type = encode_message_type(method, stun_method_type::success_response);
-        header.transaction_id[0] = transaction_id[0];
-        header.transaction_id[1] = transaction_id[1];
-        header.transaction_id[2] = transaction_id[2];
+        header.transaction_id = transaction_id;
 
         return builder;
     }
 
     message_builder message_builder::create_error_response(
         stun_method method,
-        std::span<std::uint32_t, 3> transaction_id,
+        const std::array<std::uint32_t, 3>& transaction_id,
+        stun_error_code error,
         std::span<std::byte> buffer
     ) noexcept
     {
@@ -236,9 +258,9 @@ namespace stunpp
 
         auto& header = builder.get_header();
         header.message_type = encode_message_type(method, stun_method_type::error_response);
-        header.transaction_id[0] = transaction_id[0];
-        header.transaction_id[1] = transaction_id[1];
-        header.transaction_id[2] = transaction_id[2];
+        header.transaction_id = transaction_id;
+
+        builder.add_error_code(error);
 
         return builder;
     }
@@ -256,9 +278,9 @@ namespace stunpp
         return builder;
     }
 
-    message_builder&& message_builder::add_error_code(
+    void message_builder::add_error_code(
         stun_error_code error
-    ) && noexcept
+    ) noexcept
     {
         auto attr = internal_add_attribute<error_code_attribute>();
 
@@ -269,8 +291,6 @@ namespace stunpp
         attr->number = error_value;
 
         attr->zero_bits = 0;
-
-        return std::move(*this);
     }
 
     message_builder&& message_builder::add_integrity(
@@ -282,9 +302,11 @@ namespace stunpp
         add_attribute<username_attribute>(username);
         add_attribute<realm_attribute>(realm);
 
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
+
         auto attr = internal_add_attribute<message_integrity_attribute>();
         auto& header = get_header();
-        header.message_length = m_buffer_used - sizeof(stun_header);
+        header.message_length = message_length;
 
         // The key for the HMAC depends on whether long-term or short-term
         // credentials are in use.  For long-term credentials, the key is 16
@@ -315,7 +337,7 @@ namespace stunpp
             attr->hmac_sha1,
             std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
             header,
-            std::span<std::byte>{ m_message.data() + sizeof(stun_header), header.message_length }
+            std::span<std::byte>{ m_message.data() + sizeof(stun_header), message_length }
         );
 
         return std::move(*this);
@@ -326,8 +348,11 @@ namespace stunpp
     ) && noexcept
     {
         auto attr = internal_add_attribute<message_integrity_attribute>();
+
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
+
         auto& header = get_header();
-        header.message_length = m_buffer_used - sizeof(stun_header);
+        header.message_length = message_length;
 
         // For short-term credentials:
         // 
@@ -339,7 +364,7 @@ namespace stunpp
             attr->hmac_sha1,
             std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
             header,
-            std::span<std::byte>{ m_message.data() + sizeof(stun_header), header.message_length }
+            std::span<std::byte>{ m_message.data() + sizeof(stun_header), message_length }
         );
 
         return std::move(*this);
@@ -348,23 +373,26 @@ namespace stunpp
     std::span<std::byte> message_builder::add_fingerprint(
     ) && noexcept
     {
-        auto& header = get_header();
-        header.message_length = m_buffer_used - sizeof(stun_header);
-
-        auto crc = util::hton(compute_crc32(header, { m_message.data(), m_buffer_used - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
-
         auto attr = internal_add_attribute<fingerprint_attribute>();
 
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header) - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
+
+        auto& header = get_header();
+        header.message_length = message_length;
+
+        net_uint32_t crc = compute_crc32(header, { m_message.data(), message_length + sizeof(stun_header) }) ^ 0x5354554Elu;
         attr->value = crc;
 
-        header.message_length = m_buffer_used - sizeof(stun_header);
+        message_length = m_buffer_used - sizeof(stun_header);
+
+        header.message_length = message_length;
         return { m_message.data(), m_buffer_used };
     }
 
     std::span<std::byte> message_builder::create() && noexcept
     {
         auto& header = get_header();
-        header.message_length = m_buffer_used - sizeof(stun_header);
+        header.message_length = host_uint16_t{ m_buffer_used - sizeof(stun_header) };
         return { m_message.data(), m_buffer_used };
     }
 
@@ -376,7 +404,9 @@ namespace stunpp
     message_reader::message_reader(
         std::span<const std::byte> buffer
     ) noexcept :
-        m_message(buffer)
+        m_message(buffer),
+        m_begin(nullptr),
+        m_end(nullptr)
     {
     }
 
@@ -395,7 +425,7 @@ namespace stunpp
         return reader;
     }
 
-    std::error_code message_reader::validate() const noexcept
+    std::error_code message_reader::validate() noexcept
     {
         // Start by verifying that the stun header can fit in the buffer
         if (m_message.size() < sizeof(stun_header))
@@ -406,17 +436,19 @@ namespace stunpp
         auto& header = get_header();
 
         // Ensure that this is a stun message by checking the magic cookie
-        if (header.magic_cookie != util::hton(c_stun_magic_cookie))
+        if (header.magic_cookie != c_stun_magic_cookie)
         {
             return make_error_code(stun_validation_error::not_stun_message);
         }
 
+        host_uint16_t message_length = header.message_length;
+
         // Ensure that the header isn't lying about the size of the full message
-        if (m_message.size() == sizeof(stun_header) && header.message_length != 0)
+        if (m_message.size() == sizeof(stun_header) && message_length != 0)
         {
             return make_error_code(stun_validation_error::size_mismatch);
         }
-        else if (header.message_length + sizeof(stun_header) > m_message.size())
+        else if (message_length + sizeof(stun_header) > m_message.size())
         {
             return make_error_code(stun_validation_error::size_mismatch);
         }
@@ -429,7 +461,7 @@ namespace stunpp
 
         uint16_t size = 0;
 
-        auto attribute = get_first_attribute();
+        auto attribute = begin();
 
         // Ensure that we don't read past the end of the buffer
         if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
@@ -437,19 +469,14 @@ namespace stunpp
             return stun_validation_error::size_mismatch;
         }
 
-        while (size < header.message_length)
+        m_begin = attribute;
+
+        while (size < message_length)
         {
-            auto padded_size = attribute->size;
-
-            std::uint16_t remainder = padded_size % 4;
-            if (remainder != 0)
-            {
-                padded_size += (4 - remainder);
-            }
-
+            auto padded_size = round<4>(static_cast<host_uint16_t>(attribute->size));
             size += padded_size;
 
-            if (size > header.message_length)
+            if (size > message_length)
             {
                 return make_error_code(stun_validation_error::size_mismatch);
             }
@@ -459,41 +486,75 @@ namespace stunpp
                 return make_error_code(stun_validation_error::size_mismatch);
             }
 
-            if (attribute->type == stun_attribute_type::fingerprint)
+            if (attribute->type == stun_attribute_type::username)
+            {
+                m_username = static_cast<const username_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::realm)
+            {
+                m_realm = static_cast<const realm_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::nonce)
+            {
+                m_nonce = static_cast<const nonce_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::message_integrity)
+            {
+                m_integrity = static_cast<const message_integrity_attribute*>(attribute);
+            }
+            else if (attribute->type == stun_attribute_type::fingerprint)
             {
                 // We're going to modify the header to be able to recreate the crc without copying the whole packet
                 auto edit_header = header;
-                edit_header.message_length = size - sizeof(fingerprint_attribute);
+                host_uint16_t localL_message_length = size - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
+                edit_header.message_length = localL_message_length;
 
-                auto crc = util::hton(compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), size - sizeof(fingerprint_attribute) }) ^ 0x5354554Elu);
+                auto crc = compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), localL_message_length + sizeof(stun_attribute) }) ^ 0x5354554Elu;
 
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
 
                 // We ignore all attributes after the fingerprint. So either return validation failed or the result
                 if (fingerprint->value != crc)
                 {
-                       
                     return make_error_code(stun_validation_error::fingerprint_failed);
                 }
 
-                return {};
+                attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+                break;
             }
 
             // TODO: Lifetimes
             attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
         }
 
+        m_end = attribute;
         return {};
     }
 
     std::error_code message_reader::check_integrity(std::string_view password)
     {
-        const username_attribute* username_attr{};
-        const realm_attribute* realm_attr{};
-        const message_integrity_attribute* integrity_attr{};
+        // If there's no integrity attribute then return valid.
+        if (!m_integrity)
+        {
+            return make_error_code(stun_validation_error::integrity_attribute_not_found);
+        }
+
+        bool short_term_credentials = !m_username && !m_realm;
+
+        if(!short_term_credentials)
+        {
+            if (!m_username)
+            {
+                return make_error_code(stun_validation_error::username_attribute_not_found);
+            }
+            if (!m_realm)
+            {
+                return make_error_code(stun_validation_error::realm_attribute_not_found);
+            }
+        }
 
         // TODO: Lifetimes
-        uint16_t size = 0;
+        host_uint16_t size = 0;
         const stun_attribute* attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header)]);
 
         // Ensure that we don't read past the end of the buffer
@@ -503,23 +564,12 @@ namespace stunpp
         }
 
         auto& header = get_header();
-        while (size < header.message_length)
+        host_uint16_t message_length = header.message_length;
+        while (size < message_length)
         {
-            size += attribute->size;
+            auto padded_size = round<4>(static_cast<host_uint16_t>(attribute->size));
 
-            if (attribute->type == stun_attribute_type::username)
-            {
-                username_attr = static_cast<const username_attribute*>(attribute);
-            }
-            else if (attribute->type == stun_attribute_type::realm)
-            {
-                realm_attr = static_cast<const realm_attribute*>(attribute);
-            }
-            else if (attribute->type == stun_attribute_type::message_integrity)
-            {
-                integrity_attr = static_cast<const message_integrity_attribute*>(attribute);
-                break;
-            }
+            size += padded_size;
 
             // Ensure that we don't read past the end of the buffer
             if (sizeof(stun_header) + size >= m_message.size())
@@ -527,52 +577,48 @@ namespace stunpp
                 return make_error_code(stun_validation_error::size_mismatch);
             }
 
-            // TODO: Lifetimes
             attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
         }
 
-        // If there's no integrity attribute then return valid.
-        if (!integrity_attr)
-        {
-            return make_error_code(stun_validation_error::integrity_attribute_not_found);
-        }
-
-        //TODO: determine short vs long term creds
         size = size - sizeof(message_integrity_attribute);
 
-        if (!username_attr)
-        {
-            return make_error_code(stun_validation_error::username_attribute_not_found);
-        } 
-        else if(!realm_attr)
-        {
-            return make_error_code(stun_validation_error::realm_attribute_not_found);
-        }
-
-        auto username = username_attr->value();
-        auto realm = realm_attr->value();
-
-        std::array<std::byte, 2048> key;
-        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
-        std::memcpy(key.data(), username.data(), username.size());
-        key[username.size()] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-        key[username.size() + realm.size() + 1] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
+        std::array<std::byte, 20> hmac;
 
         auto edit_header = header;
         edit_header.message_length = size;
 
-        std::array<std::byte, 20> hmac;
+        if (short_term_credentials)
+        {
+            compute_integrity(
+                hmac,
+                std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() + 2 },
+                edit_header,
+                std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
+            );
+        }
+        else
+        {
+            auto username = m_username->value();
+            auto realm = m_realm->value();
 
-        compute_integrity(
-            hmac,
-            std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
-            edit_header,
-            std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
-        );
+            std::array<std::byte, 2048> key;
+            assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
+            std::memcpy(key.data(), username.data(), username.size());
+            key[username.size()] = std::byte{ ':' };
+            std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
+            key[username.size() + realm.size() + 1] = std::byte{ ':' };
+            std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
-        if (hmac == integrity_attr->hmac_sha1)
+            compute_integrity(
+                hmac,
+                std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
+                edit_header,
+                std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
+            );
+        }
+        
+
+        if (hmac == m_integrity->hmac_sha1)
         {
             return {};
         }
@@ -582,30 +628,21 @@ namespace stunpp
         }
     }
 
-    const stun_attribute* message_reader::get_first_attribute() const noexcept
-    {
-        auto& header = get_header();
-
-        if (header.message_length == 0)
-        {
-            return nullptr;
-        }
-        else
-        {
-            return reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header)]);
-        }
-    }
-
     const stun_attribute* message_reader::get_next_attibute(const stun_attribute* attr) const noexcept
     {
         auto byte_address = reinterpret_cast<const std::byte*>(attr);
-        if (byte_address + attr->size > m_message.data() + m_message.size())
+
+        auto padded_size = round<4>(static_cast<host_uint16_t>(attr->size));
+
+        auto next_attribute = reinterpret_cast<const stun_attribute*>(byte_address + padded_size);
+
+        if (next_attribute >= m_end)
         {
             return nullptr;
         }
         else
         {
-            return reinterpret_cast<const stun_attribute*>(byte_address + attr->size);
+            return next_attribute;
         }
     }
 
