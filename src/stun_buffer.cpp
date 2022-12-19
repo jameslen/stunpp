@@ -6,9 +6,95 @@
 
 
 #include "win32/crypto_functions.h"
+
+using namespace std::string_view_literals;
 namespace
 {
     constexpr std::uint16_t c_method_mask = 0x0110;
+
+    const std::array<std::pair<stunpp::stun_error_code, std::string_view>, 12> c_error_messages{
+        std::pair{
+            stunpp::stun_error_code::try_alternate,
+            "The client should contact an alternate server for "
+            "this request.This error response MUST only be sent if the "
+            "request included a USERNAME attributeand a valid MESSAGE - "
+            "INTEGRITY attribute; otherwise, it MUST NOT be sentand error "
+            "code 400 (Bad Request) is suggested.This error response MUST "
+            "be protected with the MESSAGE - INTEGRITY attribute,and receivers "
+            "MUST validate the MESSAGE - INTEGRITY of this response before "
+            "redirecting themselves to an alternate server."sv },
+        std::pair{ 
+            stunpp::stun_error_code::bad_request,
+            "The request was malformed.The client SHOULD NOT "
+            "retry the request without modification from the previous "
+            "attempt.The server may not be able to generate a valid "
+            "MESSAGE - INTEGRITY for this error, so the client MUST NOT expect "
+            "a valid MESSAGE - INTEGRITY attribute on this response."sv },
+        std::pair{ 
+            stunpp::stun_error_code::unauthorized,
+            "The request did not contain the correct "
+            "credentials to proceed.The client should retry the request "
+            "with proper credentials."sv },
+        std::pair{ 
+            stunpp::stun_error_code::forbidden,
+            "The request was valid but cannot be performed due "
+            "to administrative or similar restrictions."sv },
+        std::pair{ 
+            stunpp::stun_error_code::unknown_attribute,
+            "The server received a STUN packet containing"
+            "a comprehension - required attribute that it did not understand. "
+            "The server MUST put this unknown attribute in the UNKNOWN - "
+            "ATTRIBUTE attribute of its error response."sv },
+        std::pair{ 
+            stunpp::stun_error_code::allocation_mistmatch,
+            "A request was received by the server that"
+            "requires an allocation to be in place, but no allocation exists, "
+            "or a request was received that requires no allocation, but an "
+            "allocation exists."sv },
+        std::pair{ 
+            stunpp::stun_error_code::stale_nonce,
+            "The NONCE used by the client was no longer valid. "
+            "The client should retry, using the NONCE provided in the "
+            "response."sv },
+        std::pair{ 
+            stunpp::stun_error_code::wrong_credentials,
+            "The credentials in the(non - Allocate) "
+            "request do not match those used to create the allocation."sv },
+        std::pair{ 
+            stunpp::stun_error_code::unsupported_transport_protocol,
+            "The Allocate request asked the "
+            "server to use a transport protocol between the serverand the peer "
+            "that the server does not support.NOTE: This does NOT refer to "
+            "the transport protocol used in the 5 - tuple."sv },
+        std::pair{ 
+            stunpp::stun_error_code::allocation_quota_reached,
+            "No more allocations using this "
+            "username can be created at the present time."sv },
+        std::pair{ 
+            stunpp::stun_error_code::server_error,
+            "Server Error : The server has suffered a temporary error. The "
+            "client should try again."sv },
+        std::pair{ 
+            stunpp::stun_error_code::server_error,
+            "The server is unable to carry out the "
+            "request due to some capacity limit being reached.In an Allocat e"
+            "response, this could be due to the server having no more relayed "
+            "transport addresses available at that time, having none with the "
+            "requested properties, or the one that corresponds to the specified "
+            "reservation token is not available."sv }
+    };
+
+    std::string_view get_error_message(stunpp::stun_error_code error) noexcept
+    {
+        for (auto& [code, message] : c_error_messages)
+        {
+            if (error == code)
+            {
+                return message;
+            }
+        }
+        return {};
+    }
 
     template <uint32_t round_value, std::integral value_t>
     constexpr [[nodiscard]] stunpp::util::host_ordered<value_t> round(stunpp::util::host_ordered<value_t> value) noexcept
@@ -200,7 +286,13 @@ namespace stunpp
 
     std::string_view error_code_attribute::error_message() const noexcept
     {
-        return {}; // TODO:
+        auto local_size = host_uint16_t{ size };
+        std::uint16_t string_length = local_size - sizeof(error_code_attribute) + sizeof(stun_attribute);
+        if( string_length == 0 )
+        {
+            return {};
+        }
+        return std::string_view{ detail::get_bytes_after_as<const char>(this), string_length };
     }
 
     message_builder::message_builder(
@@ -282,7 +374,8 @@ namespace stunpp
         stun_error_code error
     ) noexcept
     {
-        auto attr = internal_add_attribute<error_code_attribute>();
+        auto message = get_error_message(error);
+        auto attr = internal_add_attribute<error_code_attribute>(message.size());
 
         auto hundreds = static_cast<uint32_t>(error) / 100;
         attr->class_bits;
@@ -291,6 +384,8 @@ namespace stunpp
         attr->number = error_value;
 
         attr->zero_bits = 0;
+
+        std::memcpy(detail::get_bytes_after(attr), message.data(), message.size());
     }
 
     message_builder&& message_builder::add_integrity(
@@ -506,10 +601,10 @@ namespace stunpp
             {
                 // We're going to modify the header to be able to recreate the crc without copying the whole packet
                 auto edit_header = header;
-                host_uint16_t localL_message_length = size - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
-                edit_header.message_length = localL_message_length;
+                host_uint16_t local_message_length = size - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
+                edit_header.message_length = local_message_length;
 
-                auto crc = compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), localL_message_length + sizeof(stun_attribute) }) ^ 0x5354554Elu;
+                auto crc = compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), local_message_length + sizeof(stun_attribute) }) ^ 0x5354554Elu;
 
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
 

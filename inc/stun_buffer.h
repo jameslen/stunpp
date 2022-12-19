@@ -408,9 +408,9 @@ namespace stunpp
     struct error_code_attribute : stun_attribute
     {
         inline static constexpr auto c_type = stun_attribute_type::error_code;
-        std::uint32_t zero_bits : 21;
-        std::uint32_t class_bits : 3;
         std::uint32_t number : 8;
+        std::uint32_t class_bits : 3;
+        std::uint32_t zero_bits : 21;
 
         stun_error_code error_code() const noexcept;
         std::string_view error_message() const noexcept;
