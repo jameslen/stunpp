@@ -38,13 +38,13 @@ namespace stunpp
         template<typename T>
         std::byte* get_bytes_after(T* ptr)
         {
-            return retinterpret_cast<std::byte*>(ptr) + sizeof(T);
+            return reinterpret_cast<std::byte*>(ptr) + sizeof(T);
         }
 
         template<typename T>
         const std::byte* get_bytes_after(const T* ptr)
         {
-            return retinterpret_cast<const std::byte*>(ptr) + sizeof(T);
+            return reinterpret_cast<const std::byte*>(ptr) + sizeof(T);
         }
 
         template<typename data_t, typename T>
@@ -188,7 +188,7 @@ namespace stunpp
         server_error = 500,                   // Server Error: The server has suffered a temporary error.  The
                                               // client should try again.
 
-        insufficient_capacity = 508,          // The server is unable to carry out the
+        insufficient_capacity = 508           // The server is unable to carry out the
                                               // request due to some capacity limit being reached.In an Allocate
                                               // response, this could be due to the server having no more relayed
                                               // transport addresses available at that time, having none with the
@@ -690,7 +690,7 @@ namespace stunpp
         {
             auto attr = internal_add_attribute<attribute_t>(value.size());
 
-            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(attribute_t), value.data(), value.size());
+            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
 
             return *this;
         }

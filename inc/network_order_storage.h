@@ -38,9 +38,27 @@ namespace stunpp::util
         }
 
         template <std::integral U>
+        constexpr host_ordered<T> operator<<(U shift) const noexcept
+        {
+            return value << shift;
+        }
+
+        template <std::integral U>
         constexpr host_ordered<T> operator^(U rhs) const noexcept
         {
             return value ^ rhs;
+        }
+
+        template <std::integral U>
+        constexpr host_ordered<T> operator|(U rhs) const noexcept
+        {
+            return value | rhs;
+        }
+
+        template <std::integral U>
+        constexpr host_ordered<T> operator&(U rhs) const noexcept
+        {
+            return value & rhs;
         }
 
         template <std::integral U>
@@ -113,9 +131,33 @@ namespace stunpp::util
             return data;
         }
 
+        constexpr network_ordered<T> operator|(const network_ordered<T>& rhs) const
+        {
+            network_ordered<T> data;
+            data.value = value | rhs.value;
+            return data;
+        }
+
+        constexpr network_ordered<T> operator&(const network_ordered<T>& rhs) const
+        {
+            network_ordered<T> data;
+            data.value = value & rhs.value;
+            return data;
+        }
+
         constexpr network_ordered<T> operator^(const host_ordered<T>& rhs) const
         {
             return *this ^ network_ordered<T>(rhs);
+        }
+
+        constexpr network_ordered<T> operator|(const host_ordered<T>& rhs) const
+        {
+            return *this | network_ordered<T>(rhs);
+        }
+
+        constexpr network_ordered<T> operator&(const host_ordered<T>& rhs) const
+        {
+            return *this & network_ordered<T>(rhs);
         }
 
         template<std::integral U>

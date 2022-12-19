@@ -10,9 +10,9 @@
 using namespace std::string_view_literals;
 namespace
 {
-    constexpr std::uint16_t c_method_mask = 0x0110;
+    constexpr stunpp::host_uint16_t c_method_mask = 0x0110;
 
-    const std::array<std::pair<stunpp::stun_error_code, std::string_view>, 12> c_error_messages{
+    const std::array c_error_messages{
         std::pair{
             stunpp::stun_error_code::try_alternate,
             "The client should contact an alternate server for "
@@ -75,7 +75,7 @@ namespace
             "Server Error : The server has suffered a temporary error. The "
             "client should try again."sv },
         std::pair{ 
-            stunpp::stun_error_code::server_error,
+            stunpp::stun_error_code::insufficient_capacity,
             "The server is unable to carry out the "
             "request due to some capacity limit being reached.In an Allocat e"
             "response, this could be due to the server having no more relayed "
@@ -126,7 +126,7 @@ namespace
 
     constexpr stunpp::stun_method_type get_method_type(stunpp::net_uint16_t message_type) noexcept
     {
-        return stunpp::stun_method_type(stunpp::host_uint16_t(message_type) & c_method_mask);
+        return stunpp::stun_method_type(static_cast<stunpp::host_uint16_t>(message_type) & c_method_mask);
     }
     
     constexpr stunpp::stun_method get_method(stunpp::net_uint16_t message_type) noexcept
