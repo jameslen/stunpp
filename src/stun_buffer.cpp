@@ -432,7 +432,7 @@ namespace stunpp
             attr->hmac_sha1,
             std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
             header,
-            std::span<std::byte>{ m_message.data() + sizeof(stun_header), message_length }
+            std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
         );
 
         return std::move(*this);
@@ -459,7 +459,7 @@ namespace stunpp
             attr->hmac_sha1,
             std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
             header,
-            std::span<std::byte>{ m_message.data() + sizeof(stun_header), message_length }
+            std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
         );
 
         return std::move(*this);
@@ -475,7 +475,7 @@ namespace stunpp
         auto& header = get_header();
         header.message_length = message_length;
 
-        net_uint32_t crc = compute_crc32(header, { m_message.data(), message_length + sizeof(stun_header) }) ^ 0x5354554Elu;
+        net_uint32_t crc = compute_crc32(header, { detail::get_bytes_after(&header), message_length}) ^ 0x5354554Elu;
         attr->value = crc;
 
         message_length = m_buffer_used - sizeof(stun_header);
@@ -496,12 +496,26 @@ namespace stunpp
         return *reinterpret_cast<stun_header*>(m_message.data());
     }
 
+    stun_attribute_iterator& stun_attribute_iterator::operator++() noexcept
+    {
+        auto padded_size = round<4>(static_cast<host_uint16_t>(m_ptr->size));
+
+        m_ptr = detail::get_bytes_after_as<const stun_attribute>(m_ptr, padded_size);
+
+        return *this;
+    }
+
+    stun_attribute_iterator stun_attribute_iterator::operator++(int) const noexcept
+    {
+        auto result = *this;
+        ++result;
+        return result;
+    }
+
     message_reader::message_reader(
         std::span<const std::byte> buffer
     ) noexcept :
-        m_message(buffer),
-        m_begin(nullptr),
-        m_end(nullptr)
+        m_message(buffer)
     {
     }
 
@@ -556,7 +570,7 @@ namespace stunpp
 
         uint16_t size = 0;
 
-        auto attribute = begin();
+        auto attribute = detail::get_bytes_after_as<const stun_attribute>(&header);
 
         // Ensure that we don't read past the end of the buffer
         if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
@@ -569,7 +583,7 @@ namespace stunpp
         while (size < message_length)
         {
             auto padded_size = round<4>(static_cast<host_uint16_t>(attribute->size));
-            size += padded_size;
+            size += sizeof(stun_attribute) + padded_size;
 
             if (size > message_length)
             {
@@ -601,10 +615,12 @@ namespace stunpp
             {
                 // We're going to modify the header to be able to recreate the crc without copying the whole packet
                 auto edit_header = header;
-                host_uint16_t local_message_length = size - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
+
+                // Remove payload of the fingerprint attribute for the computation of the crc
+                host_uint16_t local_message_length = size - (sizeof(fingerprint_attribute) - sizeof(stun_attribute));
                 edit_header.message_length = local_message_length;
 
-                auto crc = compute_crc32(edit_header, { m_message.data() + sizeof(stun_header), local_message_length + sizeof(stun_attribute) }) ^ 0x5354554Elu;
+                auto crc = compute_crc32(edit_header, { detail::get_bytes_after(&header), local_message_length }) ^ 0x5354554Elu;
 
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
 
@@ -614,12 +630,12 @@ namespace stunpp
                     return make_error_code(stun_validation_error::fingerprint_failed);
                 }
 
-                attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+                attribute = detail::get_bytes_after_as<const stun_attribute>(attribute, padded_size);
                 break;
             }
 
             // TODO: Lifetimes
-            attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+            attribute = detail::get_bytes_after_as<const stun_attribute>(attribute, padded_size);
         }
 
         m_end = attribute;
@@ -648,9 +664,10 @@ namespace stunpp
             }
         }
 
-        // TODO: Lifetimes
+        auto& header = get_header();
+
         host_uint16_t size = 0;
-        const stun_attribute* attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header)]);
+        const stun_attribute* attribute = detail::get_bytes_after_as<const stun_attribute>(&header);
 
         // Ensure that we don't read past the end of the buffer
         if (sizeof(stun_header) + sizeof(stun_attribute) >= m_message.size())
@@ -658,11 +675,10 @@ namespace stunpp
             return make_error_code(stun_validation_error::size_mismatch);
         }
 
-        auto& header = get_header();
         host_uint16_t message_length = header.message_length;
         while (size < message_length)
         {
-            auto padded_size = round<4>(static_cast<host_uint16_t>(attribute->size));
+            std::uint16_t padded_size = sizeof(stun_attribute) + round<4>(static_cast<host_uint16_t>(attribute->size));
 
             size += padded_size;
 
@@ -672,10 +688,11 @@ namespace stunpp
                 return make_error_code(stun_validation_error::size_mismatch);
             }
 
-            attribute = reinterpret_cast<const stun_attribute*>(&m_message[sizeof(stun_header) + size]);
+            attribute = detail::get_bytes_after_as<const stun_attribute>(&header, size);
         }
 
-        size = size - sizeof(message_integrity_attribute);
+        // Remove the message_integrity's payload from the size used to compute the hmac
+        size = size - (sizeof(message_integrity_attribute) - sizeof(stun_attribute));
 
         std::array<std::byte, 20> hmac;
 
@@ -686,9 +703,9 @@ namespace stunpp
         {
             compute_integrity(
                 hmac,
-                std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() + 2 },
+                std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
                 edit_header,
-                std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
+                std::span<const std::byte>{ detail::get_bytes_after(&header), size }
             );
         }
         else
@@ -708,7 +725,7 @@ namespace stunpp
                 hmac,
                 std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
                 edit_header,
-                std::span<const std::byte>{ m_message.data() + sizeof(stun_header), size }
+                std::span<const std::byte>{ detail::get_bytes_after(&header), size }
             );
         }
         
@@ -723,22 +740,9 @@ namespace stunpp
         }
     }
 
-    const stun_attribute* message_reader::get_next_attibute(const stun_attribute* attr) const noexcept
+    const stun_header& message_reader::get_header() const noexcept
     {
-        auto byte_address = reinterpret_cast<const std::byte*>(attr);
-
-        auto padded_size = round<4>(static_cast<host_uint16_t>(attr->size));
-
-        auto next_attribute = reinterpret_cast<const stun_attribute*>(byte_address + padded_size);
-
-        if (next_attribute >= m_end)
-        {
-            return nullptr;
-        }
-        else
-        {
-            return next_attribute;
-        }
+        return *reinterpret_cast<const stun_header*>(m_message.data());
     }
 
 }

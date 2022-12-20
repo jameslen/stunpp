@@ -36,27 +36,27 @@ namespace stunpp
         ) noexcept;
 
         template<typename T>
-        std::byte* get_bytes_after(T* ptr)
+        std::byte* get_bytes_after(T* ptr, size_t offset = 0)
         {
-            return reinterpret_cast<std::byte*>(ptr) + sizeof(T);
+            return reinterpret_cast<std::byte*>(ptr) + sizeof(T) + offset;
         }
 
         template<typename T>
-        const std::byte* get_bytes_after(const T* ptr)
+        const std::byte* get_bytes_after(const T* ptr, size_t offset = 0)
         {
-            return reinterpret_cast<const std::byte*>(ptr) + sizeof(T);
+            return reinterpret_cast<const std::byte*>(ptr) + sizeof(T) + offset;
         }
 
         template<typename data_t, typename T>
-        data_t* get_bytes_after_as(T* ptr)
+        data_t* get_bytes_after_as(T* ptr, size_t offset = 0)
         {
-            return reinterpret_cast<data_t*>(get_bytes_after(ptr));
+            return reinterpret_cast<data_t*>(get_bytes_after(ptr, offset));
         }
 
         template<typename data_t, typename T>
-        const data_t* get_bytes_after_as(const T* ptr)
+        const data_t* get_bytes_after_as(const T* ptr, size_t offset = 0)
         {
-            return reinterpret_cast<const data_t*>(get_bytes_after(ptr));
+            return reinterpret_cast<const data_t*>(get_bytes_after(ptr, offset));
         }
     }
 
@@ -771,7 +771,7 @@ namespace stunpp
         {
             auto attr = internal_add_attribute<attribute_t>(data.size_bytes());
 
-            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), data.data(), data.size() * sizeof(data_t));
+            std::memcpy(detail::get_bytes_after<stun_attribute>(attr), data.data(), data.size() * sizeof(data_t));
 
             return *this;
         }
@@ -783,7 +783,7 @@ namespace stunpp
         {
             auto attr = internal_add_attribute<attribute_t>(sizeof(data_t));
 
-            std::memcpy(reinterpret_cast<std::byte*>(attr) + sizeof(stun_attribute), &data, sizeof(data_t));
+            std::memcpy(detail::get_bytes_after<stun_attribute>(attr), &data, sizeof(data_t));
 
             return *this;
         }
@@ -812,8 +812,24 @@ namespace stunpp
         stun_header& get_header() noexcept;
 
         // These attributes are only able to be included as part of the integrity attribute
-        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept;
-        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept;
+        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept
+        {
+            auto attr = internal_add_attribute<username_attribute>(value.size());
+
+            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
+
+            return *this;
+        }
+
+        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept
+        {
+            auto attr = internal_add_attribute<realm_attribute>(value.size());
+
+            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
+
+            return *this;
+        }
+
         void add_error_code(stun_error_code error) noexcept;
 
         template <typename attribute_type>
@@ -847,8 +863,33 @@ namespace stunpp
         }
     };
 
-    
- 
+    struct stun_attribute_iterator
+    {
+        using iterator_concept = std::forward_iterator_tag;
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = const stun_attribute;
+        using pointer = const value_type*;
+        using reference = const value_type&;
+
+        stun_attribute_iterator() noexcept = default;
+
+        stun_attribute_iterator(const stun_attribute* ptr) noexcept : m_ptr{ ptr } {}
+
+        inline reference operator*() const noexcept { return *m_ptr; }
+        inline pointer operator->() noexcept { return m_ptr; }
+
+        stun_attribute_iterator& operator++() noexcept;
+        stun_attribute_iterator operator++(int) const noexcept;
+
+        bool operator==(const stun_attribute_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
+
+        template<typename T>
+        const T* as() const noexcept { assert(m_ptr->type == T::c_type);  return static_cast<const T*>(m_ptr); }
+    private:
+        const stun_attribute* m_ptr;
+    };
+
     struct message_reader
     {
         static std::expected<message_reader, std::error_code> create(
@@ -861,7 +902,6 @@ namespace stunpp
         const nonce_attribute* get_nonce() const noexcept { return m_nonce; }
         std::error_code check_integrity(std::string_view password);
 
-        // TODO: Need to make a Forward_iterator type for this.
         inline auto begin() const noexcept { return m_begin; }
         inline auto end() const noexcept { return m_end; }
 
@@ -871,18 +911,17 @@ namespace stunpp
         ) noexcept;
 
         const stun_header& get_header() const noexcept;
-        const stun_attribute* get_next_attibute(const stun_attribute* attr) const noexcept;
 
         std::error_code validate() noexcept;
      
         std::span<const std::byte> m_message;
-        const stun_attribute* m_begin;
-        const stun_attribute* m_end;
+        stun_attribute_iterator m_begin{};
+        stun_attribute_iterator m_end{};
 
-        const username_attribute* m_username;
-        const realm_attribute* m_realm;
-        const nonce_attribute* m_nonce;
-        const message_integrity_attribute* m_integrity;
+        const username_attribute* m_username{};
+        const realm_attribute* m_realm{};
+        const nonce_attribute* m_nonce{};
+        const message_integrity_attribute* m_integrity{};
 
     };
 }

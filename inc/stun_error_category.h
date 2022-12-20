@@ -7,7 +7,10 @@ namespace stunpp
 	public:
 		const char* name() const noexcept override { return "stun_validation"; }
 		std::string message(int) const noexcept override { return "stun_validation"; }
-		bool equivalent(const std::error_code& error, int condition) const noexcept override;
+		bool equivalent(const std::error_code& error, int condition) const noexcept override
+		{
+			return true;
+		}
 
 	};
 
