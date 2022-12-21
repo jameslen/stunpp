@@ -25,6 +25,9 @@ namespace stunpp
     using net_uint32_t = util::network_ordered<std::uint32_t>;
     using host_uint32_t = util::host_ordered<std::uint32_t>;
 
+    using net_uint64_t = util::network_ordered<std::uint64_t>;
+    using host_uint64_t = util::host_ordered<std::uint64_t>;
+
     constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
 
     namespace detail
@@ -122,8 +125,14 @@ namespace stunpp
         reserved8           = util::hton<std::uint16_t>(0x0021),
         reservation_token   = util::hton<std::uint16_t>(0x0022),
 
+        // ICE RFC 5245
+        priority            = util::hton<std::uint16_t>(0x0024),
+        use_candidate       = util::hton<std::uint16_t>(0x0025),
+        ice_controlled      = util::hton<std::uint16_t>(0x8029),
+        ice_controlling     = util::hton<std::uint16_t>(0x802A),
+
         // STUN RFC 5389 Optional Range
-        software            = util::hton<std::uint16_t>(0x0022),
+        software            = util::hton<std::uint16_t>(0x8022),
         alternate_server    = util::hton<std::uint16_t>(0x8023),
         fingerprint         = util::hton<std::uint16_t>(0x8028),
 
@@ -185,6 +194,9 @@ namespace stunpp
         allocation_quota_reached = 486,       // No more allocations using this
                                               // username can be created at the present time.
 
+        role_conflict = 487,                  // The client asserted an ICE role (controlling or
+                                              // controlled) that is in conflict with the role of the server.
+
         server_error = 500,                   // Server Error: The server has suffered a temporary error.  The
                                               // client should try again.
 
@@ -195,6 +207,8 @@ namespace stunpp
                                               // requested properties, or the one that corresponds to the specified
                                               // reservation token is not available.
     };
+
+#pragma pack(push, 4)
 
     // All STUN messages MUST start with a 20 - byte header followed by zero
     // or more Attributes.The STUN header contains a STUN message type,
@@ -259,6 +273,16 @@ namespace stunpp
         {
             return { detail::get_bytes_after_as<const data_t>(this), static_cast<host_uint16_t>(size) };
         }
+    };
+
+    struct value_base_attribute : stun_attribute
+    {
+    };
+
+    template <std::integral data_t>
+    struct value_attribute : data_base_attribute
+    {
+        util::network_ordered<data_t> value;
     };
 
     // The MAPPED - ADDRESS attribute indicates a reflexive transport address
@@ -381,10 +405,9 @@ namespace stunpp
     // polynomial of x32+x26+x23+x22+x16+x12+x11+x10+x8+x7+x5+x4+x2+x+1.
     // When present, the FINGERPRINT attribute MUST be the last attribute in
     // the message, and thus will appear after MESSAGE-INTEGRITY.
-    struct fingerprint_attribute : stun_attribute
+    struct fingerprint_attribute : value_attribute<std::uint32_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::fingerprint;
-        net_uint32_t value;
     };
 
     // The ERROR-CODE attribute is used in error response messages.  It
@@ -408,9 +431,10 @@ namespace stunpp
     struct error_code_attribute : stun_attribute
     {
         inline static constexpr auto c_type = stun_attribute_type::error_code;
-        std::uint32_t number : 8;
-        std::uint32_t class_bits : 3;
-        std::uint32_t zero_bits : 21;
+        std::uint16_t zero_bytes;
+        std::uint8_t class_bits : 3;
+        std::uint8_t zero_bits : 5;
+        std::uint8_t number;
 
         stun_error_code error_code() const noexcept;
         std::string_view error_message() const noexcept;
@@ -511,11 +535,9 @@ namespace stunpp
     //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     //   |        Channel Number         |         RFFU = 0              |
     //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    struct channel_number_attribute : stun_attribute
+    struct channel_number_attribute : value_attribute<std::uint16_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::channel_number;
-
-        net_uint16_t channel_number;
     };
 
     // The LIFETIME attribute represents the duration for which the server
@@ -523,11 +545,9 @@ namespace stunpp
     // portion of this attribute is 4-bytes long and consists of a 32-bit
     // unsigned integral value representing the number of seconds remaining
     // until expiration.
-    struct lifetime_attribute : stun_attribute
+    struct lifetime_attribute : value_attribute<std::uint32_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::lifetime;
-
-        net_uint32_t lifetime;
     };
 
     // The XOR-PEER-ADDRESS specifies the address and port of the peer as
@@ -655,6 +675,46 @@ namespace stunpp
         std::array<std::byte, 8> token;
     };
 
+    // The PRIORITY attribute indicates the priority that is to be
+    // associated with a peer reflexive candidate, should one be discovered
+    // by this check.  It is a 32-bit unsigned integer, and has an attribute
+    // value of 0x0024.
+    struct priority_attribute : value_attribute<std::uint32_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::priority;
+    };
+
+    // The USE-CANDIDATE attribute indicates that the candidate pair
+    // resulting from this check should be used for transmission of media.
+    // The attribute has no content (the Length field of the attribute is
+    // zero); it serves as a flag.  It has an attribute value of 0x0025.
+    struct use_candidate_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::use_candidate;
+    };
+
+    // The ICE-CONTROLLED attribute is present in a Binding request and
+    // indicates that the client believes it is currently in the controlled
+    // role.  The content of the attribute is a 64-bit unsigned integer in
+    // network byte order, which contains a random number used for tie-
+    // breaking of role conflicts.
+    struct ice_controlled_attribute : value_attribute<std::uint64_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::ice_controlled;
+    };
+
+    // The ICE-CONTROLLING attribute is present in a Binding request and
+    // indicates that the client believes it is currently in the controlling
+    // role.  The content of the attribute is a 64-bit unsigned integer in
+    // network byte order, which contains a random number used for tie-
+    // breaking of role conflicts.
+    struct ice_controlling_attribute : value_attribute<std::uint64_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::ice_controlling;
+    };
+
+#pragma pack(pop)
+
     struct message_builder
     {
         message_builder(
@@ -682,6 +742,15 @@ namespace stunpp
         static message_builder create_indication(
             stun_method method,
             std::span<std::byte> buffer
+        ) noexcept;
+
+        // This method should not generally be called. It is primarily here for testing
+        message_builder& set_transaction_id(
+            const std::array<std::uint32_t, 3>& transaction_id
+        ) noexcept;
+
+        message_builder& set_padding_value(
+            std::byte value
         ) noexcept;
 
         template<typename attribute_t>
@@ -731,11 +800,9 @@ namespace stunpp
 
             attr->family = address_family::ipv4;
 
-            std::uint16_t xor_port = address.sin_port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
-            std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
+            attr->port_bytes = util::network_order_from_value(address.sin_port) ^ static_cast<host_uint16_t>(c_stun_magic_cookie >> 16);
 
-            std::uint32_t xor_address = address.sin_addr.S_un.S_addr ^ util::hton(c_stun_magic_cookie);
-            std::memcpy(attr->address_bytes.data(), &xor_address, attr->address_bytes.size());
+            attr->address_bytes = (util::network_order_from_value<std::uint32_t>(address.sin_addr.S_un.S_addr) ^ c_stun_magic_cookie).read();
 
             return *this;
         }
@@ -750,8 +817,7 @@ namespace stunpp
 
             attr->family = address_family::ipv6;
 
-            std::uint16_t xor_port = address.sin6_port ^ util::hton(static_cast<std::uint16_t>(c_stun_magic_cookie >> 16));
-            std::memcpy(attr->port_bytes.data(), &xor_port, attr->port_bytes.size());
+            attr->port_bytes = util::network_order_from_value(address.sin6_port) ^ static_cast<host_uint16_t>(c_stun_magic_cookie >> 16);
 
             constexpr net_uint32_t magic_cookie = c_stun_magic_cookie;
 
@@ -777,13 +843,14 @@ namespace stunpp
         }
 
         template<typename attribute_t, std::integral data_t>
+            requires std::is_base_of_v<value_attribute<data_t>, attribute_t>
         message_builder& add_attribute(
-            data_t data
+            util::host_ordered<data_t> data
         ) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>(sizeof(data_t));
+            auto attr = internal_add_attribute<attribute_t>();
 
-            std::memcpy(detail::get_bytes_after<stun_attribute>(attr), &data, sizeof(data_t));
+            attr->value = data;
 
             return *this;
         }
@@ -793,6 +860,7 @@ namespace stunpp
                 sizeof(attribute_t) == sizeof(stun_attribute); 
                 !std::is_base_of_v<string_view_attribute, attribute_t>;
                 !std::is_base_of_v<data_base_attribute, attribute_t>;
+                !std::is_base_of_v<value_base_attribute, attribute_t>;
             }
         message_builder& add_attribute() noexcept
         {
@@ -801,13 +869,16 @@ namespace stunpp
             return *this;
         }
 
-        message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) && noexcept;
-        message_builder&& add_integrity(std::string_view password) && noexcept;
+        message_builder&& add_integrity(std::string_view username, std::string_view nonce, std::string_view realm, std::string_view password) & noexcept;
+        message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) & noexcept;
+        message_builder&& add_integrity(std::string_view username, std::string_view password) & noexcept;
+        message_builder&& add_integrity(std::string_view password) & noexcept;
         std::span<std::byte> add_fingerprint() && noexcept;
         std::span<std::byte> create() && noexcept;
     private:
         std::uint16_t m_buffer_used{0};
         std::span<std::byte> m_message;
+        std::byte m_padding{ 0 };
 
         stun_header& get_header() noexcept;
 
@@ -856,7 +927,7 @@ namespace stunpp
             // Zero out any padding
             if (remainder != 0)
             {
-                std::memset(m_message.data() + m_buffer_used - remainder, 0, remainder);
+                std::memset(m_message.data() + m_buffer_used - (4 - remainder), static_cast<int>(m_padding), 4 - remainder);
             }
 
             return attr;

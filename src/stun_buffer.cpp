@@ -142,7 +142,7 @@ namespace
 
     constexpr std::uint32_t c_crcMask = 0xFFFFFFFFUL;
 
-    const std::array<std::uint32_t,256> c_crctable{
+    constexpr std::array<std::uint32_t,256> c_crctable{
         0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f, 0xe963a535, 0x9e6495a3,
         0x0edb8832, 0x79dcb8a4, 0xe0d5e91e, 0x97d2d988, 0x09b64c2b, 0x7eb17cbd, 0xe7b82d07, 0x90bf1d91,
         0x1db71064, 0x6ab020f2, 0xf3b97148, 0x84be41de, 0x1adad47d, 0x6ddde4eb, 0xf4d4b551, 0x83d385c7,
@@ -195,6 +195,25 @@ namespace
         }
         return (~crc);
     }
+
+    constexpr std::uint32_t crc_test()
+    {
+        std::uint32_t crc = c_crcMask;
+
+        constexpr std::array buffer{
+            std::byte{'1'}, std::byte{'2'}, std::byte{'3'},
+            std::byte{'4'}, std::byte{'5'}, std::byte{'6'},
+            std::byte{'7'}, std::byte{'8'}, std::byte{'9'}
+        };
+
+        for (auto byte : buffer)
+        {
+            crc = c_crctable[static_cast<std::uint8_t>(crc) ^ static_cast<std::uint8_t>(byte)] ^ (crc >> 8);
+        }
+        return (~crc);
+    }
+
+    static_assert(crc_test() == 0xcbf43926);
 }
 
 namespace stunpp
@@ -281,7 +300,7 @@ namespace stunpp
 
     stun_error_code error_code_attribute::error_code() const noexcept
     {
-        return stun_error_code{ class_bits * 100 + number };
+        return stun_error_code{ static_cast<std::uint32_t>(class_bits * 100 + number) };
     }
 
     std::string_view error_code_attribute::error_message() const noexcept
@@ -370,6 +389,25 @@ namespace stunpp
         return builder;
     }
 
+    message_builder& message_builder::set_transaction_id(
+        const std::array<std::uint32_t, 3>& transation_id
+    ) noexcept
+    {
+        auto& header = get_header();
+        header.transaction_id = transation_id;
+
+        return *this;
+    }
+
+    message_builder& message_builder::set_padding_value(
+        std::byte value
+    ) noexcept
+    {
+        m_padding = value;
+
+        return *this;
+    }
+
     void message_builder::add_error_code(
         stun_error_code error
     ) noexcept
@@ -378,9 +416,9 @@ namespace stunpp
         auto attr = internal_add_attribute<error_code_attribute>(message.size());
 
         auto hundreds = static_cast<uint32_t>(error) / 100;
-        attr->class_bits;
+        attr->class_bits = hundreds;
 
-        auto error_value = static_cast<uint32_t>(error) - hundreds;
+        std::uint8_t error_value = static_cast<uint32_t>(error) % 100;
         attr->number = error_value;
 
         attr->zero_bits = 0;
@@ -390,9 +428,61 @@ namespace stunpp
 
     message_builder&& message_builder::add_integrity(
         std::string_view username,
+        std::string_view nonce,
         std::string_view realm,
         std::string_view password
-    ) && noexcept
+    ) & noexcept
+    {
+        add_attribute<username_attribute>(username);
+        add_attribute<nonce_attribute>(nonce);
+        add_attribute<realm_attribute>(realm);
+
+        auto attr = internal_add_attribute<message_integrity_attribute>();
+        auto& header = get_header();
+
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
+        header.message_length = message_length;
+
+        // The key for the HMAC depends on whether long-term or short-term
+        // credentials are in use.  For long-term credentials, the key is 16
+        // bytes:
+        // 
+        //          key = MD5(username ":" realm ":" SASLprep(password))
+        // 
+        // That is, the 16-byte key is formed by taking the MD5 hash of the
+        // result of concatenating the following five fields: (1) the username,
+        // with any quotes and trailing nulls removed, as taken from the
+        // USERNAME attribute (in which case SASLprep has already been applied);
+        // (2) a single colon; (3) the realm, with any quotes and trailing nulls
+        // removed; (4) a single colon; and (5) the password, with any trailing
+        // nulls removed and after processing using SASLprep.  For example, if
+        // the username was 'user', the realm was 'realm', and the password was
+        // 'pass', then the 16-byte HMAC key would be the result of performing
+        // an MD5 hash on the string 'user:realm:pass', the resulting hash being
+        // 0x8493fbc53ba582fb4c044c456bdc40eb.
+        std::array<std::byte, 2048> key;
+        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
+        std::memcpy(key.data(), username.data(), username.size());
+        key[username.size()] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
+        key[username.size() + realm.size() + 1] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
+        attr->hmac_sha1 = {};
+        compute_integrity(
+            attr->hmac_sha1,
+            compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 }),
+            header,
+            { detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
+        );
+
+        return std::move(*this);
+    }
+
+    message_builder&& message_builder::add_integrity(
+        std::string_view username,
+        std::string_view realm,
+        std::string_view password
+    ) & noexcept
     {
         add_attribute<username_attribute>(username);
         add_attribute<realm_attribute>(realm);
@@ -420,17 +510,17 @@ namespace stunpp
         // 'pass', then the 16-byte HMAC key would be the result of performing
         // an MD5 hash on the string 'user:realm:pass', the resulting hash being
         // 0x8493fbc53ba582fb4c044c456bdc40eb.
-        std::array<std::byte, 2048> key;
+        std::array<std::uint8_t, 2048> key;
         assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
         std::memcpy(key.data(), username.data(), username.size());
-        key[username.size()] = std::byte{ ':' };
+        key[username.size()] = std::uint8_t{ ':' };
         std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-        key[username.size() + realm.size() + 1] = std::byte{ ':' };
+        key[username.size() + realm.size() + 1] = std::uint8_t{ ':' };
         std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
         compute_integrity(
             attr->hmac_sha1,
-            std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
+            { key.data(), username.size() + realm.size() + password.size() + 2 },
             header,
             std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
         );
@@ -439,14 +529,15 @@ namespace stunpp
     }
 
     message_builder&& message_builder::add_integrity(
+        std::string_view username,
         std::string_view password
-    ) && noexcept
+    ) & noexcept
     {
+        add_attribute<username_attribute>(username);
         auto attr = internal_add_attribute<message_integrity_attribute>();
+        auto& header = get_header();
 
         host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
-
-        auto& header = get_header();
         header.message_length = message_length;
 
         // For short-term credentials:
@@ -455,11 +546,39 @@ namespace stunpp
         // 
         // where MD5 is defined in RFC 1321 [RFC1321] and SASLprep() is defined
         // in RFC 4013 [RFC4013].
+        attr->hmac_sha1 = {};
         compute_integrity(
             attr->hmac_sha1,
-            std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
+            { reinterpret_cast<const std::uint8_t*>(password.data()), password.size() },
             header,
-            std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
+            { detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
+        );
+
+        return std::move(*this);
+    }
+
+    message_builder&& message_builder::add_integrity(
+        std::string_view password
+    ) & noexcept
+    {
+        auto attr = internal_add_attribute<message_integrity_attribute>();
+        auto& header = get_header();
+
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
+        header.message_length = message_length;
+
+        // For short-term credentials:
+        // 
+        //                        key = SASLprep(password)
+        // 
+        // where MD5 is defined in RFC 1321 [RFC1321] and SASLprep() is defined
+        // in RFC 4013 [RFC4013].
+        attr->hmac_sha1 = {};
+        compute_integrity(
+            attr->hmac_sha1,
+            { reinterpret_cast<const std::uint8_t*>(password.data()), password.size() },
+            header,
+            { detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
         );
 
         return std::move(*this);
@@ -470,12 +589,12 @@ namespace stunpp
     {
         auto attr = internal_add_attribute<fingerprint_attribute>();
 
-        host_uint16_t message_length = m_buffer_used - sizeof(stun_header) - sizeof(fingerprint_attribute) + sizeof(stun_attribute);
+        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
 
         auto& header = get_header();
         header.message_length = message_length;
 
-        net_uint32_t crc = compute_crc32(header, { detail::get_bytes_after(&header), message_length}) ^ 0x5354554Elu;
+        net_uint32_t crc = compute_crc32(header, { detail::get_bytes_after(&header), message_length - sizeof(fingerprint_attribute)}) ^ 0x5354554Elu;
         attr->value = crc;
 
         message_length = m_buffer_used - sizeof(stun_header);
@@ -703,7 +822,7 @@ namespace stunpp
         {
             compute_integrity(
                 hmac,
-                std::span<const std::byte>{ reinterpret_cast<const std::byte*>(password.data()), password.size() },
+                { reinterpret_cast<const std::uint8_t*>(password.data()), password.size() },
                 edit_header,
                 std::span<const std::byte>{ detail::get_bytes_after(&header), size }
             );
@@ -713,17 +832,17 @@ namespace stunpp
             auto username = m_username->value();
             auto realm = m_realm->value();
 
-            std::array<std::byte, 2048> key;
+            std::array<std::uint8_t, 2048> key;
             assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
             std::memcpy(key.data(), username.data(), username.size());
-            key[username.size()] = std::byte{ ':' };
+            key[username.size()] = std::uint8_t{ ':' };
             std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-            key[username.size() + realm.size() + 1] = std::byte{ ':' };
+            key[username.size() + realm.size() + 1] = std::uint8_t{ ':' };
             std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
             compute_integrity(
                 hmac,
-                std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 },
+                { key.data(), username.size() + realm.size() + password.size() + 2 },
                 edit_header,
                 std::span<const std::byte>{ detail::get_bytes_after(&header), size }
             );

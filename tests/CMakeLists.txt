@@ -2,7 +2,7 @@ enable_testing()
 
 add_executable(
 	stunpp_tests
-	stunpp_tests.cpp
+	"stunpp_builder_tests.cpp"
 	stunpp_network_order_tests.cpp
  )
 target_link_libraries(
