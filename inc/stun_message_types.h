@@ -46,7 +46,7 @@ namespace stunpp
 
     constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
 
-    // THe method's type and method are not stored pre-converted to netowrk 
+	// THe method's type and method are not stored pre-converted to netowrk 
     // order because they have to be combined/parsed apart.
     enum class stun_method_type : std::uint16_t
     {
@@ -79,63 +79,63 @@ namespace stunpp
     enum class stun_attribute_type : std::uint16_t
     {
         // STUN RFC 5389 Required Range
-        reserved0 = util::hton<std::uint16_t>(0x0000),
-        mapped_address = util::hton<std::uint16_t>(0x0001),
-        reserved1 = util::hton<std::uint16_t>(0x0002),
-        reserved2 = util::hton<std::uint16_t>(0x0003),
-        reserved3 = util::hton<std::uint16_t>(0x0004),
-        reserved4 = util::hton<std::uint16_t>(0x0005),
-        username = util::hton<std::uint16_t>(0x0006),
-        reserved5 = util::hton<std::uint16_t>(0x0007),
-        message_integrity = util::hton<std::uint16_t>(0x0008),
-        error_code = util::hton<std::uint16_t>(0x0009),
-        unknown_attributes = util::hton<std::uint16_t>(0x000A),
-        reserved6 = util::hton<std::uint16_t>(0x000B),
-        realm = util::hton<std::uint16_t>(0x0014),
-        nonce = util::hton<std::uint16_t>(0x0015),
-        xor_mapped_address = util::hton<std::uint16_t>(0x0020),
+        reserved0                = util::hton<std::uint16_t>(0x0000),
+        mapped_address           = util::hton<std::uint16_t>(0x0001),
+        reserved1                = util::hton<std::uint16_t>(0x0002),
+        reserved2                = util::hton<std::uint16_t>(0x0003),
+        reserved3                = util::hton<std::uint16_t>(0x0004),
+        reserved4                = util::hton<std::uint16_t>(0x0005),
+        username                 = util::hton<std::uint16_t>(0x0006),
+        reserved5                = util::hton<std::uint16_t>(0x0007),
+        message_integrity        = util::hton<std::uint16_t>(0x0008),
+        error_code               = util::hton<std::uint16_t>(0x0009),
+        unknown_attributes       = util::hton<std::uint16_t>(0x000A),
+        reserved6                = util::hton<std::uint16_t>(0x000B),
+        realm                    = util::hton<std::uint16_t>(0x0014),
+        nonce                    = util::hton<std::uint16_t>(0x0015),
+        xor_mapped_address       = util::hton<std::uint16_t>(0x0020),
 
         // STUN RFC 8489
         message_integrity_sha265 = util::hton<std::uint16_t>(0x001C),
-        password_algorithm = util::hton<std::uint16_t>(0x001D),
-        userhash = util::hton<std::uint16_t>(0x001E),
+        password_algorithm       = util::hton<std::uint16_t>(0x001D),
+        userhash                 = util::hton<std::uint16_t>(0x001E),
 
         // TURN RFC 8656
-        channel_number = util::hton<std::uint16_t>(0x000C),
-        lifetime = util::hton<std::uint16_t>(0x000D),
-        reserved7 = util::hton<std::uint16_t>(0x0010),
-        xor_peer_address = util::hton<std::uint16_t>(0x0012),
-        data = util::hton<std::uint16_t>(0x0013),
-        xor_relayed_address = util::hton<std::uint16_t>(0x0016),
+        channel_number           = util::hton<std::uint16_t>(0x000C),
+        lifetime                 = util::hton<std::uint16_t>(0x000D),
+        reserved7                = util::hton<std::uint16_t>(0x0010),
+        xor_peer_address         = util::hton<std::uint16_t>(0x0012),
+        data                     = util::hton<std::uint16_t>(0x0013),
+        xor_relayed_address      = util::hton<std::uint16_t>(0x0016),
         requested_address_family = util::hton<std::uint16_t>(0x0017),
-        even_port = util::hton<std::uint16_t>(0x0018),
-        requested_transport = util::hton<std::uint16_t>(0x0019),
-        dont_fragment = util::hton<std::uint16_t>(0x001A),
-        reserved8 = util::hton<std::uint16_t>(0x0021),
-        reservation_token = util::hton<std::uint16_t>(0x0022),
-
+        even_port                = util::hton<std::uint16_t>(0x0018),
+        requested_transport      = util::hton<std::uint16_t>(0x0019),
+        dont_fragment            = util::hton<std::uint16_t>(0x001A),
+        reserved8                = util::hton<std::uint16_t>(0x0021),
+        reservation_token        = util::hton<std::uint16_t>(0x0022),
+ 
         // ICE RFC 5245          
-        priority = util::hton<std::uint16_t>(0x0024),
-        use_candidate = util::hton<std::uint16_t>(0x0025),
-        ice_controlled = util::hton<std::uint16_t>(0x8029),
-        ice_controlling = util::hton<std::uint16_t>(0x802A),
+        priority                 = util::hton<std::uint16_t>(0x0024),
+        use_candidate            = util::hton<std::uint16_t>(0x0025),
+        ice_controlled           = util::hton<std::uint16_t>(0x8029),
+        ice_controlling          = util::hton<std::uint16_t>(0x802A),
 
         // STUN RFC 5389 Optional Range
-        software = util::hton<std::uint16_t>(0x8022),
-        alternate_server = util::hton<std::uint16_t>(0x8023),
-        fingerprint = util::hton<std::uint16_t>(0x8028),
+        software                 = util::hton<std::uint16_t>(0x8022),
+        alternate_server         = util::hton<std::uint16_t>(0x8023),
+        fingerprint              = util::hton<std::uint16_t>(0x8028),
 
         // STUN RFC 8489 Optional Range
-        password_algorithms = util::hton<std::uint16_t>(0x8022),
-        alternate_domain = util::hton<std::uint16_t>(0x8023),
+        password_algorithms      = util::hton<std::uint16_t>(0x8022),
+        alternate_domain         = util::hton<std::uint16_t>(0x8023),
 
         // TURN RFC 8656 Optional Range
         additional_address_family = util::hton<std::uint16_t>(0x8000),
-        address_error_code = util::hton<std::uint16_t>(0x8001),
-        icmp = util::hton<std::uint16_t>(0x8004),
+        address_error_code        = util::hton<std::uint16_t>(0x8001),
+        icmp                      = util::hton<std::uint16_t>(0x8004),
 
 
-        invalid = 0xFFFF
+        invalid                  = 0xFFFF
     };
 
     enum class address_family : std::uint8_t
@@ -147,76 +147,76 @@ namespace stunpp
     enum class password_algorithms : std::uint16_t
     {
         reserved = 0,
-        md5 = util::hton<std::uint16_t>(0x0001),
-        sha_256 = util::hton<std::uint16_t>(0x0002),
+        md5      = util::hton<std::uint16_t>(0x0001),
+        sha_256  = util::hton<std::uint16_t>(0x0002),
     };
 
     enum class stun_error_code : std::uint32_t
     {
         try_alternate = 300,                  // The client should contact an alternate server for
-        // this request.  This error response MUST only be sent if the
-        // request included a USERNAME attribute and a valid MESSAGE-
-        // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
-        // code 400 (Bad Request) is suggested.  This error response MUST
-        // be protected with the MESSAGE-INTEGRITY attribute, and receivers
-        // MUST validate the MESSAGE-INTEGRITY of this response before
-        // redirecting themselves to an alternate server.
-
+                                              // this request.  This error response MUST only be sent if the
+                                              // request included a USERNAME attribute and a valid MESSAGE-
+                                              // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
+                                              // code 400 (Bad Request) is suggested.  This error response MUST
+                                              // be protected with the MESSAGE-INTEGRITY attribute, and receivers
+                                              // MUST validate the MESSAGE-INTEGRITY of this response before
+                                              // redirecting themselves to an alternate server.
+                                              
         bad_request = 400,                    // The request was malformed.  The client SHOULD NOT
-        // retry the request without modification from the previous
-        // attempt.  The server may not be able to generate a valid
-        // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
-        // a valid MESSAGE-INTEGRITY attribute on this response.
-
+                                              // retry the request without modification from the previous
+                                              // attempt.  The server may not be able to generate a valid
+                                              // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
+                                              // a valid MESSAGE-INTEGRITY attribute on this response.
+                                              
         unauthorized = 401,                   // The request did not contain the correct
-        // credentials to proceed.  The client should retry the request
-        // with proper credentials.
-
+                                              // credentials to proceed.  The client should retry the request
+                                              // with proper credentials.
+                                              
         forbidden = 403,                      // The request was valid but cannot be performed due
-        // to administrative or similar restrictions.
-
+                                              // to administrative or similar restrictions.
+                                              
         unknown_attribute = 420,              // The server received a STUN packet containing
-        // a comprehension-required attribute that it did not understand.
-        // The server MUST put this unknown attribute in the UNKNOWN-
-        // ATTRIBUTE attribute of its error response.
-
+                                              // a comprehension-required attribute that it did not understand.
+                                              // The server MUST put this unknown attribute in the UNKNOWN-
+                                              // ATTRIBUTE attribute of its error response.
+                                              
         allocation_mistmatch = 437,           // A request was received by the server that requires an allocation
-        // to be in place, but no allocation exists, or a request was
-        // received that requires no allocation, but an allocation exists.
-
+                                              // to be in place, but no allocation exists, or a request was
+                                              // received that requires no allocation, but an allocation exists.
+                                              
         stale_nonce = 438,                    // The NONCE used by the client was no longer valid.
-        // The client should retry, using the NONCE provided in the
-        // response.
+                                              // The client should retry, using the NONCE provided in the
+                                              // response.
 
         address_family_not_supported = 440,   // The server does not support the address family requested by the
-        // client.
-
+                                              // client.
+                                              
         wrong_credentials = 441,              // The credentials in the (non - Allocate) request 
-        // do not match those used to create the allocation.
+                                              // do not match those used to create the allocation.
 
         unsupported_transport_protocol = 442, // The Allocate request asked the server to use a transport protocol
-        // between the serverand the peer that the server does not support.
-        // NOTE: This does NOT refer to the transport protocol used in the
-        // 5 - tuple.
+                                              // between the serverand the peer that the server does not support.
+                                              // NOTE: This does NOT refer to the transport protocol used in the
+                                              // 5 - tuple.
 
         peer_address_family_mismatch = 443,   // A peer address is part of a different address family than that of
-        // the relayed transport address of the allocation.
+                                              // the relayed transport address of the allocation.
 
         allocation_quota_reached = 486,       // No more allocations using this username can be created at the
-        // present time.
+                                              // present time.
 
         role_conflict = 487,                  // The client asserted an ICE role (controlling or
-        // controlled) that is in conflict with the role of the server.
+                                              // controlled) that is in conflict with the role of the server.
 
         server_error = 500,                   // Server Error: The server has suffered a temporary error.  The
-        // client should try again.
+                                              // client should try again.
 
         insufficient_capacity = 508           // The server is unable to carry out the request due to some capacity
-        // limit being reached.In an Allocate response, this could be due
-        // to the server having no more relayed transport addresses available
-        // at that time, having none with the requested properties, or the
-        // one that corresponds to the specified reservation token is not
-        // available.
+                                              // limit being reached.In an Allocate response, this could be due
+                                              // to the server having no more relayed transport addresses available
+                                              // at that time, having none with the requested properties, or the
+                                              // one that corresponds to the specified reservation token is not
+                                              // available.
     };
 
 #pragma pack(push, 4)
@@ -291,10 +291,18 @@ namespace stunpp
     };
 
     template <std::integral data_t>
-    struct value_attribute : data_base_attribute
+    struct integral_attribute : data_base_attribute
     {
         util::network_ordered<data_t> value;
     };
+
+    template <typename data_t>
+        requires std::is_enum_v<data_t>
+    struct enum_attribute : data_base_attribute
+    {
+        data_t value;
+    };
+
 
     // The MAPPED - ADDRESS attribute indicates a reflexive transport address
     // of the client.It consists of an 8 - bit address family and a 16 - bit
@@ -416,7 +424,7 @@ namespace stunpp
     // polynomial of x32+x26+x23+x22+x16+x12+x11+x10+x8+x7+x5+x4+x2+x+1.
     // When present, the FINGERPRINT attribute MUST be the last attribute in
     // the message, and thus will appear after MESSAGE-INTEGRITY.
-    struct fingerprint_attribute : value_attribute<std::uint32_t>
+    struct fingerprint_attribute : integral_attribute<std::uint32_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::fingerprint;
     };
@@ -546,7 +554,7 @@ namespace stunpp
     //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
     //   |        Channel Number         |         RFFU = 0              |
     //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-    struct channel_number_attribute : value_attribute<std::uint16_t>
+    struct channel_number_attribute : integral_attribute<std::uint16_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::channel_number;
     };
@@ -556,7 +564,7 @@ namespace stunpp
     // portion of this attribute is 4-bytes long and consists of a 32-bit
     // unsigned integral value representing the number of seconds remaining
     // until expiration.
-    struct lifetime_attribute : value_attribute<std::uint32_t>
+    struct lifetime_attribute : integral_attribute<std::uint32_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::lifetime;
     };
@@ -628,7 +636,7 @@ namespace stunpp
     // 
     // Reserved:  At this point, the 24 bits in the Reserved field MUST be
     //    set to zero by the client and MUST be ignored by the server.
-    struct requested_address_family_attribute : data_view_attribute<std::uint8_t>
+    struct requested_address_family_attribute : enum_attribute<address_family>
     {
         inline static constexpr auto c_type = stun_attribute_type::requested_address_family;
     };
@@ -715,7 +723,7 @@ namespace stunpp
     // ADDITIONAL-ADDRESS-FAMILY attribute MAY be present in the Allocate
     // request.  The attribute value of 0x02 (IPv6 address) is the only
     // valid value in Allocate request.
-    struct additional_address_family : data_view_attribute<std::uint8_t>
+    struct additional_address_family : enum_attribute<address_family>
     {
         inline static constexpr auto c_type = stun_attribute_type::additional_address_family;
     };
@@ -814,7 +822,7 @@ namespace stunpp
     // associated with a peer reflexive candidate, should one be discovered
     // by this check.  It is a 32-bit unsigned integer, and has an attribute
     // value of 0x0024.
-    struct priority_attribute : value_attribute<std::uint32_t>
+    struct priority_attribute : integral_attribute<std::uint32_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::priority;
     };
@@ -833,7 +841,7 @@ namespace stunpp
     // role.  The content of the attribute is a 64-bit unsigned integer in
     // network byte order, which contains a random number used for tie-
     // breaking of role conflicts.
-    struct ice_controlled_attribute : value_attribute<std::uint64_t>
+    struct ice_controlled_attribute : integral_attribute<std::uint64_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::ice_controlled;
     };
@@ -843,7 +851,7 @@ namespace stunpp
     // role.  The content of the attribute is a 64-bit unsigned integer in
     // network byte order, which contains a random number used for tie-
     // breaking of role conflicts.
-    struct ice_controlling_attribute : value_attribute<std::uint64_t>
+    struct ice_controlling_attribute : integral_attribute<std::uint64_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::ice_controlling;
     };

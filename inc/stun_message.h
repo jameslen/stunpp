@@ -137,9 +137,22 @@ namespace stunpp
         }
 
         template<typename attribute_t, std::integral data_t>
-            requires std::is_base_of_v<value_attribute<data_t>, attribute_t>
+            requires std::is_base_of_v<integral_attribute<data_t>, attribute_t>
         message_builder& add_attribute(
             util::host_ordered<data_t> data
+        ) noexcept
+        {
+            auto attr = internal_add_attribute<attribute_t>();
+
+            attr->value = data;
+
+            return *this;
+        }
+
+        template<typename attribute_t, typename data_t>
+            requires std::is_base_of_v<enum_attribute<data_t>, attribute_t>
+        message_builder& add_attribute(
+            data_t data
         ) noexcept
         {
             auto attr = internal_add_attribute<attribute_t>();
