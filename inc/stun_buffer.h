@@ -367,7 +367,7 @@ namespace stunpp
         // Storing as a uint32_t to make xoring with the magic cookie and id efficient
         std::array<std::uint32_t, 4> address_bytes;
 
-        SOCKADDR_IN6 address(std::span<std::uint32_t, 3> message_id) const noexcept;
+        SOCKADDR_IN6 address(std::span<const std::uint32_t, 3> message_id) const noexcept;
     };
 
     // The USERNAME attribute is used for message integrity.  It identifies
@@ -951,7 +951,7 @@ namespace stunpp
         inline pointer operator->() noexcept { return m_ptr; }
 
         stun_attribute_iterator& operator++() noexcept;
-        stun_attribute_iterator operator++(int) const noexcept;
+        stun_attribute_iterator operator++(int) noexcept;
 
         bool operator==(const stun_attribute_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
 
@@ -967,6 +967,8 @@ namespace stunpp
             std::span<const std::byte> buffer
         ) noexcept;
 
+        const stun_header& get_header() const noexcept;
+
         bool has_integrity() const noexcept { return m_integrity != nullptr; }
         const username_attribute* get_username() const noexcept { return m_username; }
         const realm_attribute* get_realm() const noexcept { return m_realm; }
@@ -981,7 +983,6 @@ namespace stunpp
             std::span<const std::byte> buffer
         ) noexcept;
 
-        const stun_header& get_header() const noexcept;
 
         std::error_code validate() noexcept;
      

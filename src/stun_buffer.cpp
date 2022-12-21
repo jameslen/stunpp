@@ -273,13 +273,12 @@ namespace stunpp
     {
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
-        std::memcpy(&addr.sin_addr.S_un.S_addr, &address_bytes, sizeof(address_bytes));
-        addr.sin_addr.S_un.S_addr ^= c_stun_magic_cookie;
+        addr.sin_addr.S_un.S_addr = (util::network_order_from_value(address_bytes) ^ c_stun_magic_cookie).read();
         addr.sin_port = port().read();
         return addr;
     }
 
-    SOCKADDR_IN6 ipv6_xor_mapped_address_attribute::address(std::span<std::uint32_t, 3> message_id) const noexcept
+    SOCKADDR_IN6 ipv6_xor_mapped_address_attribute::address(std::span<const std::uint32_t, 3> message_id) const noexcept
     {
         SOCKADDR_IN6 addr{};
         addr.sin6_family = AF_INET6;
@@ -510,17 +509,17 @@ namespace stunpp
         // 'pass', then the 16-byte HMAC key would be the result of performing
         // an MD5 hash on the string 'user:realm:pass', the resulting hash being
         // 0x8493fbc53ba582fb4c044c456bdc40eb.
-        std::array<std::uint8_t, 2048> key;
+        std::array<std::byte, 2048> key;
         assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
         std::memcpy(key.data(), username.data(), username.size());
-        key[username.size()] = std::uint8_t{ ':' };
+        key[username.size()] = std::byte{ ':' };
         std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-        key[username.size() + realm.size() + 1] = std::uint8_t{ ':' };
+        key[username.size() + realm.size() + 1] = std::byte{ ':' };
         std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
         compute_integrity(
             attr->hmac_sha1,
-            { key.data(), username.size() + realm.size() + password.size() + 2 },
+            compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 }),
             header,
             std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
         );
@@ -624,10 +623,10 @@ namespace stunpp
         return *this;
     }
 
-    stun_attribute_iterator stun_attribute_iterator::operator++(int) const noexcept
+    stun_attribute_iterator stun_attribute_iterator::operator++(int) noexcept
     {
         auto result = *this;
-        ++result;
+        ++(*this);
         return result;
     }
 
@@ -708,7 +707,7 @@ namespace stunpp
             {
                 return make_error_code(stun_validation_error::size_mismatch);
             }
-            else if (sizeof(stun_header) + size >= m_message.size())
+            else if (sizeof(stun_header) + size > m_message.size())
             {
                 // Ensure that we don't read past the end of the buffer
                 return make_error_code(stun_validation_error::size_mismatch);
@@ -736,10 +735,10 @@ namespace stunpp
                 auto edit_header = header;
 
                 // Remove payload of the fingerprint attribute for the computation of the crc
-                host_uint16_t local_message_length = size - (sizeof(fingerprint_attribute) - sizeof(stun_attribute));
+                host_uint16_t local_message_length = size;
                 edit_header.message_length = local_message_length;
 
-                auto crc = compute_crc32(edit_header, { detail::get_bytes_after(&header), local_message_length }) ^ 0x5354554Elu;
+                auto crc = compute_crc32(edit_header, { detail::get_bytes_after(&header), static_cast<size_t>(size - sizeof(stun_attribute) - padded_size) }) ^ 0x5354554Elu;
 
                 auto* fingerprint = static_cast<const fingerprint_attribute*>(attribute);
 
@@ -769,7 +768,7 @@ namespace stunpp
             return make_error_code(stun_validation_error::integrity_attribute_not_found);
         }
 
-        bool short_term_credentials = !m_username && !m_realm;
+        bool short_term_credentials = !m_username || !m_realm;
 
         if(!short_term_credentials)
         {
@@ -801,6 +800,11 @@ namespace stunpp
 
             size += padded_size;
 
+            if (attribute->type == stun_attribute_type::message_integrity)
+            {
+                break;
+            }
+
             // Ensure that we don't read past the end of the buffer
             if (sizeof(stun_header) + size >= m_message.size())
             {
@@ -809,9 +813,6 @@ namespace stunpp
 
             attribute = detail::get_bytes_after_as<const stun_attribute>(&header, size);
         }
-
-        // Remove the message_integrity's payload from the size used to compute the hmac
-        size = size - (sizeof(message_integrity_attribute) - sizeof(stun_attribute));
 
         std::array<std::byte, 20> hmac;
 
@@ -824,7 +825,7 @@ namespace stunpp
                 hmac,
                 { reinterpret_cast<const std::uint8_t*>(password.data()), password.size() },
                 edit_header,
-                std::span<const std::byte>{ detail::get_bytes_after(&header), size }
+                std::span<const std::byte>{ detail::get_bytes_after(&header), size - sizeof(message_integrity_attribute) }
             );
         }
         else
@@ -832,19 +833,19 @@ namespace stunpp
             auto username = m_username->value();
             auto realm = m_realm->value();
 
-            std::array<std::uint8_t, 2048> key;
+            std::array<std::byte, 2048> key;
             assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
             std::memcpy(key.data(), username.data(), username.size());
-            key[username.size()] = std::uint8_t{ ':' };
+            key[username.size()] = std::byte{ ':' };
             std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-            key[username.size() + realm.size() + 1] = std::uint8_t{ ':' };
+            key[username.size() + realm.size() + 1] = std::byte{ ':' };
             std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
 
             compute_integrity(
                 hmac,
-                { key.data(), username.size() + realm.size() + password.size() + 2 },
+                compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 }),
                 edit_header,
-                std::span<const std::byte>{ detail::get_bytes_after(&header), size }
+                std::span<const std::byte>{ detail::get_bytes_after(&header), size - sizeof(message_integrity_attribute) }
             );
         }
         
