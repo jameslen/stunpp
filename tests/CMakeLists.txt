@@ -5,6 +5,7 @@ add_executable(
 	stunpp_reader_tests.cpp
 	stunpp_network_order_tests.cpp
 	stunpp_builder_tests.cpp)
+
 target_link_libraries(
 	stunpp_tests
 	stunpp

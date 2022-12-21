@@ -30,10 +30,10 @@ namespace stunpp
         std::ignore = res;
 
         std::array<uint8_t, 16> hash_buffer{};
-        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(key.data())), key.size(), 0);
+        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(key.data())), static_cast<ULONG>(key.size()), 0);
         assert(NT_SUCCESS(res) && "Failed to hash data");
 
-        res = BCryptFinishHash(hash_handle, hash_buffer.data(), hash_buffer.size(), 0);
+        res = BCryptFinishHash(hash_handle, hash_buffer.data(), static_cast<ULONG>(hash_buffer.size()), 0);
         assert(NT_SUCCESS(res) && "Failed to finish hash");
         std::ignore = res;
 
@@ -74,7 +74,7 @@ namespace stunpp
             alg_handle,
             &hash_handle,
             reinterpret_cast<PUCHAR>(hash_object_buffer.data()), hash_object_size,
-            const_cast<std::uint8_t*>(key.data()), key.size(),
+            const_cast<std::uint8_t*>(key.data()), static_cast<ULONG>(key.size()),
             0
         );
         assert(NT_SUCCESS(res) && "Failed to create hash object");
@@ -83,11 +83,11 @@ namespace stunpp
         res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<stun_header*>(&header)), sizeof(header), 0);
         assert(NT_SUCCESS(res) && "Failed to hash data");
 
-        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), data.size(), 0);
+        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), static_cast<ULONG>(data.size()), 0);
         assert(NT_SUCCESS(res) && "Failed to hash data");
         std::ignore = res;
 
-        res = BCryptFinishHash(hash_handle, reinterpret_cast<PUCHAR>(hmac.data()), hmac.size(), 0);
+        res = BCryptFinishHash(hash_handle, reinterpret_cast<PUCHAR>(hmac.data()), static_cast<ULONG>(hmac.size()), 0);
         assert(NT_SUCCESS(res) && "Failed to finish hash");
         std::ignore = res;
 
