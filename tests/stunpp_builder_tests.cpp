@@ -99,87 +99,6 @@ TEST(stun_builder, binding_request_fingerprint) {
     EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
 }
 
-TEST(stun_builder, md5_test) {
-    const char key[] = "user:realm:pass";
-
-    auto result = stunpp::compute_md5_hash({ reinterpret_cast<const std::byte*>(key), sizeof(key) - 1 });
-
-    const std::array c_expected_bytes{
-        std::byte{0x84},
-        std::byte{0x93},
-        std::byte{0xfb},
-        std::byte{0xc5},
-        std::byte{0x3b},
-        std::byte{0xa5},
-        std::byte{0x82},
-        std::byte{0xfb},
-        std::byte{0x4c},
-        std::byte{0x04},
-        std::byte{0x4c},
-        std::byte{0x45},
-        std::byte{0x6b},
-        std::byte{0xdc},
-        std::byte{0x40},
-        std::byte{0xeb},
-    };
-
-    EXPECT_EQ(std::memcmp(result.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
-}
-
-TEST(stun_builder, sha1hmac_test) {
-    stunpp::stun_header header;
-    header.message_type = stunpp::util::network_order_from_value<std::uint16_t>(0x0100);
-    header.message_length = stunpp::host_uint16_t{ 80 };
-    header.magic_cookie = stunpp::c_stun_magic_cookie;
-    header.transaction_id = { 0x01a7e7b7, 0x86d634bc, 0xaedf87fa };
-
-    const std::array c_payload{
-        std::byte{ 0x80 }, std::byte{ 0x22 }, std::byte{ 0x00 }, std::byte{ 0x10 }, // Attribute: Software, Size: 16
-        std::byte{ 0x53 }, std::byte{ 0x54 }, std::byte{ 0x55 }, std::byte{ 0x4e }, // "STUN"
-        std::byte{ 0x20 }, std::byte{ 0x74 }, std::byte{ 0x65 }, std::byte{ 0x73 }, // " tes"
-        std::byte{ 0x74 }, std::byte{ 0x20 }, std::byte{ 0x63 }, std::byte{ 0x6c }, // "t cl"
-        std::byte{ 0x69 }, std::byte{ 0x65 }, std::byte{ 0x6e }, std::byte{ 0x74 }, // "ient"
-        std::byte{ 0x00 }, std::byte{ 0x24 }, std::byte{ 0x00 }, std::byte{ 0x04 }, // Attribute: Priority, Size: 4
-        std::byte{ 0x6e }, std::byte{ 0x00 }, std::byte{ 0x01 }, std::byte{ 0xff }, // Priority
-        std::byte{ 0x80 }, std::byte{ 0x29 }, std::byte{ 0x00 }, std::byte{ 0x08 }, // Attribute: Ice Controlled, Size: 8
-        std::byte{ 0x93 }, std::byte{ 0x2f }, std::byte{ 0xf9 }, std::byte{ 0xb1 }, // Tie breaker
-        std::byte{ 0x51 }, std::byte{ 0x26 }, std::byte{ 0x3b }, std::byte{ 0x36 }, // Tie breaker
-        std::byte{ 0x00 }, std::byte{ 0x06 }, std::byte{ 0x00 }, std::byte{ 0x09 }, // Attribute: Username, Size: 9
-        std::byte{ 0x65 }, std::byte{ 0x76 }, std::byte{ 0x74 }, std::byte{ 0x6a }, // "evjt"
-        std::byte{ 0x3a }, std::byte{ 0x68 }, std::byte{ 0x36 }, std::byte{ 0x76 }, // ":h6v"
-        std::byte{ 0x59 }, std::byte{ 0x20 }, std::byte{ 0x20 }, std::byte{ 0x20 }, // "Y\0\0\0"
-        //std::byte{ 0x00 }, std::byte{ 0x08 }, std::byte{ 0x00 }, std::byte{ 0x14 }, // Attribute: Message Integrity, Size: 20 
-        //std::byte{ 0x9a }, std::byte{ 0xea }, std::byte{ 0xa7 }, std::byte{ 0x0c }, // HMAC-SHA1
-        //std::byte{ 0xbf }, std::byte{ 0xd8 }, std::byte{ 0xcb }, std::byte{ 0x56 }, // HMAC-SHA1
-        //std::byte{ 0x78 }, std::byte{ 0x1e }, std::byte{ 0xf2 }, std::byte{ 0xb5 }, // HMAC-SHA1
-        //std::byte{ 0xb2 }, std::byte{ 0xd3 }, std::byte{ 0xf2 }, std::byte{ 0x49 }, // HMAC-SHA1
-        //std::byte{ 0xc1 }, std::byte{ 0xb5 }, std::byte{ 0x71 }, std::byte{ 0xa2 }, // HMAC-SHA1
-    };
-
-    std::array<std::byte, 20> hmac;
-
-    char8_t password[] = u8"VOkJxbRl1RmTxUk/WvJxBt";
-    
-    std::span<std::uint8_t> key{ (uint8_t*)password, std::size(password) * sizeof(char8_t)};
-
-    stunpp::compute_integrity(
-        hmac,
-        key,
-        header,
-        c_payload
-    );
-
-    const std::array<std::byte, 20> c_expected_bytes{
-        std::byte{ 0x9a }, std::byte{ 0xea }, std::byte{ 0xa7 }, std::byte{ 0x0c }, // HMAC-SHA1
-        std::byte{ 0xbf }, std::byte{ 0xd8 }, std::byte{ 0xcb }, std::byte{ 0x56 }, // HMAC-SHA1
-        std::byte{ 0x78 }, std::byte{ 0x1e }, std::byte{ 0xf2 }, std::byte{ 0xb5 }, // HMAC-SHA1
-        std::byte{ 0xb2 }, std::byte{ 0xd3 }, std::byte{ 0xf2 }, std::byte{ 0x49 }, // HMAC-SHA1
-        std::byte{ 0xc1 }, std::byte{ 0xb5 }, std::byte{ 0x71 }, std::byte{ 0xa2 }, // HMAC-SHA1
-    };
-
-    EXPECT_EQ(c_expected_bytes, hmac) << "HMAC did not match expected";
-}
-
 TEST(stun_builder, rfc5769_request) {
     // Binding request test
     std::array<std::byte, 1024> buffer;
@@ -194,7 +113,7 @@ TEST(stun_builder, rfc5769_request) {
 
     const std::array c_expected_bytes{
         std::byte{ 0x00 }, std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x58 }, // Binding request, Size 88
-        std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Mabig Cookie
+        std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Magic Cookie
         std::byte{ 0xb7 }, std::byte{ 0xe7 }, std::byte{ 0xa7 }, std::byte{ 0x01 }, // Tranaction Id
         std::byte{ 0xbc }, std::byte{ 0x34 }, std::byte{ 0xd6 }, std::byte{ 0x86 }, // Tranaction Id
         std::byte{ 0xfa }, std::byte{ 0x87 }, std::byte{ 0xdf }, std::byte{ 0xae }, // Tranaction Id
@@ -225,6 +144,106 @@ TEST(stun_builder, rfc5769_request) {
     EXPECT_EQ(packet.size(), c_expected_bytes.size()) << "Packet did size did not match the size of the header";
     EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
 }
+
+TEST(stun_builder, rfc5769_ipv4_response) {
+    SOCKADDR_IN address;
+    address.sin_family = AF_INET;
+    address.sin_port = stunpp::util::hton<std::uint16_t>(32853);
+    address.sin_addr.S_un.S_un_b.s_b1 = 192;
+    address.sin_addr.S_un.S_un_b.s_b2 = 0;
+    address.sin_addr.S_un.S_un_b.s_b3 = 2;
+    address.sin_addr.S_un.S_un_b.s_b4 = 1;
+    std::array<std::byte, 1024> buffer;
+    auto packet = stunpp::message_builder::create_success_response(
+            stunpp::stun_method::binding, { 0x01a7e7b7, 0x86d634bc, 0xaedf87fa }, buffer
+        )
+        .set_padding_value(std::byte{ 0x20 })
+        .add_attribute<stunpp::software_attribute>("test vector")
+        .add_attribute<stunpp::ipv4_xor_mapped_address_attribute>(address)
+        .add_integrity("VOkJxbRl1RmTxUk/WvJxBt")
+        .add_fingerprint();
+
+    const std::array c_expected_bytes{
+        std::byte{ 0x01 }, std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x3c }, // Binding Success, Size 60
+        std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Magic Cookie
+        std::byte{ 0xb7 }, std::byte{ 0xe7 }, std::byte{ 0xa7 }, std::byte{ 0x01 }, // Transaction Id
+        std::byte{ 0xbc }, std::byte{ 0x34 }, std::byte{ 0xd6 }, std::byte{ 0x86 }, // Transaction Id
+        std::byte{ 0xfa }, std::byte{ 0x87 }, std::byte{ 0xdf }, std::byte{ 0xae }, // Transaction Id
+        std::byte{ 0x80 }, std::byte{ 0x22 }, std::byte{ 0x00 }, std::byte{ 0x0b }, // Attribute: Software, Size: 11
+        std::byte{ 0x74 }, std::byte{ 0x65 }, std::byte{ 0x73 }, std::byte{ 0x74 }, // "test"
+        std::byte{ 0x20 }, std::byte{ 0x76 }, std::byte{ 0x65 }, std::byte{ 0x63 }, // " vec"
+        std::byte{ 0x74 }, std::byte{ 0x6f }, std::byte{ 0x72 }, std::byte{ 0x20 }, // "tor\x20"
+        std::byte{ 0x00 }, std::byte{ 0x20 }, std::byte{ 0x00 }, std::byte{ 0x08 }, // Attribute: XOR Mapped Address, Size: 8
+        std::byte{ 0x00 }, std::byte{ 0x01 }, std::byte{ 0xa1 }, std::byte{ 0x47 }, // Family: IPv4, port ^ 0x2112
+        std::byte{ 0xe1 }, std::byte{ 0x12 }, std::byte{ 0xa6 }, std::byte{ 0x43 }, // Address ^ 0x2112a442
+        std::byte{ 0x00 }, std::byte{ 0x08 }, std::byte{ 0x00 }, std::byte{ 0x14 }, // Attribute: Message Integrity, Size: 20
+        std::byte{ 0x2b }, std::byte{ 0x91 }, std::byte{ 0xf5 }, std::byte{ 0x99 }, // HMAC-SHA1
+        std::byte{ 0xfd }, std::byte{ 0x9e }, std::byte{ 0x90 }, std::byte{ 0xc3 }, // HMAC-SHA1
+        std::byte{ 0x8c }, std::byte{ 0x74 }, std::byte{ 0x89 }, std::byte{ 0xf9 }, // HMAC-SHA1
+        std::byte{ 0x2a }, std::byte{ 0xf9 }, std::byte{ 0xba }, std::byte{ 0x53 }, // HMAC-SHA1
+        std::byte{ 0xf0 }, std::byte{ 0x6b }, std::byte{ 0xe7 }, std::byte{ 0xd7 }, // HMAC-SHA1
+        std::byte{ 0x80 }, std::byte{ 0x28 }, std::byte{ 0x00 }, std::byte{ 0x04 }, // Attribute: Fingerprint, Size 4
+        std::byte{ 0xc0 }, std::byte{ 0x7d }, std::byte{ 0x4c }, std::byte{ 0x96 }, // CRC32 ^ 0x5354554e
+    };
+
+    EXPECT_EQ(packet.size(), c_expected_bytes.size()) << "Packet did size did not match the size of the header";
+    EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
+}
+
+TEST(stun_builder, rfc5769_ipv6_response) {
+    SOCKADDR_IN6 address;
+    address.sin6_family = AF_INET6;
+    address.sin6_port = stunpp::util::hton<std::uint16_t>(32853);
+    // 2001:db8:1234:5678:11:2233:4455:6677
+    address.sin6_addr.u.Word[0] = stunpp::util::hton<std::uint16_t>(0x2001);
+    address.sin6_addr.u.Word[1] = stunpp::util::hton<std::uint16_t>(0x0db8);
+    address.sin6_addr.u.Word[2] = stunpp::util::hton<std::uint16_t>(0x1234);
+    address.sin6_addr.u.Word[3] = stunpp::util::hton<std::uint16_t>(0x5678);
+    address.sin6_addr.u.Word[4] = stunpp::util::hton<std::uint16_t>(0x0011);
+    address.sin6_addr.u.Word[5] = stunpp::util::hton<std::uint16_t>(0x2233);
+    address.sin6_addr.u.Word[6] = stunpp::util::hton<std::uint16_t>(0x4455);
+    address.sin6_addr.u.Word[7] = stunpp::util::hton<std::uint16_t>(0x6677);
+    std::array<std::byte, 92> buffer;
+    auto packet = stunpp::message_builder::create_success_response(
+        stunpp::stun_method::binding, { 0x01a7e7b7, 0x86d634bc, 0xaedf87fa }, buffer
+    )
+        .set_padding_value(std::byte{ 0x20 })
+        .add_attribute<stunpp::software_attribute>("test vector")
+        .add_attribute<stunpp::ipv6_xor_mapped_address_attribute>(address)
+        .add_integrity("VOkJxbRl1RmTxUk/WvJxBt")
+        .add_fingerprint();
+
+    const std::array c_expected_bytes{
+        std::byte{ 0x01 }, std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x48 }, // Binding Success, Size: 72
+        std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Magic Cookie
+        std::byte{ 0xb7 }, std::byte{ 0xe7 }, std::byte{ 0xa7 }, std::byte{ 0x01 }, // Transaction Id
+        std::byte{ 0xbc }, std::byte{ 0x34 }, std::byte{ 0xd6 }, std::byte{ 0x86 }, // Transaction Id
+        std::byte{ 0xfa }, std::byte{ 0x87 }, std::byte{ 0xdf }, std::byte{ 0xae }, // Transaction Id
+        std::byte{ 0x80 }, std::byte{ 0x22 }, std::byte{ 0x00 }, std::byte{ 0x0b }, // Attribute: Software, Size: 11
+        std::byte{ 0x74 }, std::byte{ 0x65 }, std::byte{ 0x73 }, std::byte{ 0x74 }, // "test"
+        std::byte{ 0x20 }, std::byte{ 0x76 }, std::byte{ 0x65 }, std::byte{ 0x63 }, // " vec"
+        std::byte{ 0x74 }, std::byte{ 0x6f }, std::byte{ 0x72 }, std::byte{ 0x20 }, // "tor\x20"
+        std::byte{ 0x00 }, std::byte{ 0x20 }, std::byte{ 0x00 }, std::byte{ 0x14 }, // Attribute: XOR Mapped Address, Size: 20
+        std::byte{ 0x00 }, std::byte{ 0x02 }, std::byte{ 0xa1 }, std::byte{ 0x47 }, // Family: IPv6, port ^ 0x2112
+        std::byte{ 0x01 }, std::byte{ 0x13 }, std::byte{ 0xa9 }, std::byte{ 0xfa }, // Address ^ 0x2112a442
+        std::byte{ 0xa5 }, std::byte{ 0xd3 }, std::byte{ 0xf1 }, std::byte{ 0x79 }, // Address ^ Transaction Id
+        std::byte{ 0xbc }, std::byte{ 0x25 }, std::byte{ 0xf4 }, std::byte{ 0xb5 }, // Address ^ Transaction Id
+        std::byte{ 0xbe }, std::byte{ 0xd2 }, std::byte{ 0xb9 }, std::byte{ 0xd9 }, // Address ^ Transaction Id
+        std::byte{ 0x00 }, std::byte{ 0x08 }, std::byte{ 0x00 }, std::byte{ 0x14 }, // Attribute: Message Integrity, Size: 20
+        std::byte{ 0xa3 }, std::byte{ 0x82 }, std::byte{ 0x95 }, std::byte{ 0x4e }, // HMAC-SHA1
+        std::byte{ 0x4b }, std::byte{ 0xe6 }, std::byte{ 0x7b }, std::byte{ 0xf1 }, // HMAC-SHA1
+        std::byte{ 0x17 }, std::byte{ 0x84 }, std::byte{ 0xc9 }, std::byte{ 0x7c }, // HMAC-SHA1
+        std::byte{ 0x82 }, std::byte{ 0x92 }, std::byte{ 0xc2 }, std::byte{ 0x75 }, // HMAC-SHA1
+        std::byte{ 0xbf }, std::byte{ 0xe3 }, std::byte{ 0xed }, std::byte{ 0x41 }, // HMAC-SHA1
+        std::byte{ 0x80 }, std::byte{ 0x28 }, std::byte{ 0x00 }, std::byte{ 0x04 }, // Attribute: Fingerprint, Size 4
+        std::byte{ 0xc8 }, std::byte{ 0xfb }, std::byte{ 0x0b }, std::byte{ 0x4c }, // CRC32 ^ 0x5354554e
+    };
+
+    EXPECT_EQ(packet.size(), c_expected_bytes.size()) << "Packet did size did not match the size of the header";
+    EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
+}
+
+
 
 TEST(stun_builder, rfc5769_long_term_credentials) {
     // Binding request test
@@ -274,27 +293,3 @@ TEST(stun_builder, rfc5769_long_term_credentials) {
     EXPECT_EQ(packet.size(), c_expected_bytes.size()) << "Packet did size did not match the size of the header";
     EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
 }
-
-//TEST(stun_reader, binding_response_failure) {
-//    // Binding request test
-//    std::array<std::byte, 1024> buffer;
-//    auto packet = stunpp::message_builder::create_request(stunpp::stun_method::binding, buffer)
-//        .create();
-//
-//    EXPECT_EQ(packet.size(), sizeof(stunpp::stun_header)) << "Packet did size did not match the size of the header";
-//
-//    // Skip the last 12 bytes because that's randomly generated
-//
-//}
-//
-//TEST(stun_reader, binding_response_success) {
-//    // Binding request test
-//    std::array<std::byte, 1024> buffer;
-//    auto packet = stunpp::message_builder::create_request(stunpp::stun_method::binding, buffer)
-//        .create();
-//
-//    EXPECT_EQ(packet.size(), sizeof(stunpp::stun_header)) << "Packet did size did not match the size of the header";
-//
-//    // Skip the last 12 bytes because that's randomly generated
-//
-//}
