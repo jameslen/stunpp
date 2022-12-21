@@ -1,35 +1,16 @@
-// https://datatracker.ietf.org/doc/html/rfc5389
 #pragma once
 
 #include <array>
-#include <bit>
-#include <cassert>
-#include <compare>
-#include <expected>
-#include <memory_resource>
 #include <span>
 #include <string>
-#include <vector>
 
 #include <WinSock2.h>
 #include <WS2tcpip.h>
 
 #include "network_order_storage.h"
-#include "stun_error_category.h"
 
 namespace stunpp
 {
-    using net_uint16_t = util::network_ordered<std::uint16_t>;
-    using host_uint16_t = util::host_ordered<std::uint16_t>;
-
-    using net_uint32_t = util::network_ordered<std::uint32_t>;
-    using host_uint32_t = util::host_ordered<std::uint32_t>;
-
-    using net_uint64_t = util::network_ordered<std::uint64_t>;
-    using host_uint64_t = util::host_ordered<std::uint64_t>;
-
-    constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
-
     namespace detail
     {
         void xor_map_ipv6_address(
@@ -62,6 +43,8 @@ namespace stunpp
             return reinterpret_cast<const data_t*>(get_bytes_after(ptr, offset));
         }
     }
+
+    constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
 
     // THe method's type and method are not stored pre-converted to netowrk 
     // order because they have to be combined/parsed apart.
@@ -96,47 +79,63 @@ namespace stunpp
     enum class stun_attribute_type : std::uint16_t
     {
         // STUN RFC 5389 Required Range
-        reserved0           = util::hton<std::uint16_t>(0x0000),
-        mapped_address      = util::hton<std::uint16_t>(0x0001),
-        reserved1           = util::hton<std::uint16_t>(0x0002),
-        reserved2           = util::hton<std::uint16_t>(0x0003),
-        reserved3           = util::hton<std::uint16_t>(0x0004),
-        reserved4           = util::hton<std::uint16_t>(0x0005),
-        username            = util::hton<std::uint16_t>(0x0006),
-        reserved5           = util::hton<std::uint16_t>(0x0007),
-        message_integrity   = util::hton<std::uint16_t>(0x0008),
-        error_code          = util::hton<std::uint16_t>(0x0009),
-        unknown_attributes  = util::hton<std::uint16_t>(0x000A),
-        reserved6           = util::hton<std::uint16_t>(0x000B),
-        realm               = util::hton<std::uint16_t>(0x0014),
-        nonce               = util::hton<std::uint16_t>(0x0015),
-        xor_mapped_address  = util::hton<std::uint16_t>(0x0020),
+        reserved0 = util::hton<std::uint16_t>(0x0000),
+        mapped_address = util::hton<std::uint16_t>(0x0001),
+        reserved1 = util::hton<std::uint16_t>(0x0002),
+        reserved2 = util::hton<std::uint16_t>(0x0003),
+        reserved3 = util::hton<std::uint16_t>(0x0004),
+        reserved4 = util::hton<std::uint16_t>(0x0005),
+        username = util::hton<std::uint16_t>(0x0006),
+        reserved5 = util::hton<std::uint16_t>(0x0007),
+        message_integrity = util::hton<std::uint16_t>(0x0008),
+        error_code = util::hton<std::uint16_t>(0x0009),
+        unknown_attributes = util::hton<std::uint16_t>(0x000A),
+        reserved6 = util::hton<std::uint16_t>(0x000B),
+        realm = util::hton<std::uint16_t>(0x0014),
+        nonce = util::hton<std::uint16_t>(0x0015),
+        xor_mapped_address = util::hton<std::uint16_t>(0x0020),
 
-        // TURN RFC 5766
-        channel_number      = util::hton<std::uint16_t>(0x000C),
-        lifetime            = util::hton<std::uint16_t>(0x000D),
-        reserved7           = util::hton<std::uint16_t>(0x0010),
-        xor_peer_address    = util::hton<std::uint16_t>(0x0012),
-        data                = util::hton<std::uint16_t>(0x0013),
+        // STUN RFC 8489
+        message_integrity_sha265 = util::hton<std::uint16_t>(0x001C),
+        password_algorithm = util::hton<std::uint16_t>(0x001D),
+        userhash = util::hton<std::uint16_t>(0x001E),
+
+        // TURN RFC 8656
+        channel_number = util::hton<std::uint16_t>(0x000C),
+        lifetime = util::hton<std::uint16_t>(0x000D),
+        reserved7 = util::hton<std::uint16_t>(0x0010),
+        xor_peer_address = util::hton<std::uint16_t>(0x0012),
+        data = util::hton<std::uint16_t>(0x0013),
         xor_relayed_address = util::hton<std::uint16_t>(0x0016),
-        even_port           = util::hton<std::uint16_t>(0x0018),
+        requested_address_family = util::hton<std::uint16_t>(0x0017),
+        even_port = util::hton<std::uint16_t>(0x0018),
         requested_transport = util::hton<std::uint16_t>(0x0019),
-        dont_fragment       = util::hton<std::uint16_t>(0x001A),
-        reserved8           = util::hton<std::uint16_t>(0x0021),
-        reservation_token   = util::hton<std::uint16_t>(0x0022),
+        dont_fragment = util::hton<std::uint16_t>(0x001A),
+        reserved8 = util::hton<std::uint16_t>(0x0021),
+        reservation_token = util::hton<std::uint16_t>(0x0022),
 
-        // ICE RFC 5245
-        priority            = util::hton<std::uint16_t>(0x0024),
-        use_candidate       = util::hton<std::uint16_t>(0x0025),
-        ice_controlled      = util::hton<std::uint16_t>(0x8029),
-        ice_controlling     = util::hton<std::uint16_t>(0x802A),
+        // ICE RFC 5245          
+        priority = util::hton<std::uint16_t>(0x0024),
+        use_candidate = util::hton<std::uint16_t>(0x0025),
+        ice_controlled = util::hton<std::uint16_t>(0x8029),
+        ice_controlling = util::hton<std::uint16_t>(0x802A),
 
         // STUN RFC 5389 Optional Range
-        software            = util::hton<std::uint16_t>(0x8022),
-        alternate_server    = util::hton<std::uint16_t>(0x8023),
-        fingerprint         = util::hton<std::uint16_t>(0x8028),
+        software = util::hton<std::uint16_t>(0x8022),
+        alternate_server = util::hton<std::uint16_t>(0x8023),
+        fingerprint = util::hton<std::uint16_t>(0x8028),
 
-        invalid             = 0xFFFF
+        // STUN RFC 8489 Optional Range
+        password_algorithms = util::hton<std::uint16_t>(0x8022),
+        alternate_domain = util::hton<std::uint16_t>(0x8023),
+
+        // TURN RFC 8656 Optional Range
+        additional_address_family = util::hton<std::uint16_t>(0x8000),
+        address_error_code = util::hton<std::uint16_t>(0x8001),
+        icmp = util::hton<std::uint16_t>(0x8004),
+
+
+        invalid = 0xFFFF
     };
 
     enum class address_family : std::uint8_t
@@ -145,67 +144,79 @@ namespace stunpp
         ipv6 = 0x02
     };
 
+    enum class password_algorithms : std::uint16_t
+    {
+        reserved = 0,
+        md5 = util::hton<std::uint16_t>(0x0001),
+        sha_256 = util::hton<std::uint16_t>(0x0002),
+    };
+
     enum class stun_error_code : std::uint32_t
     {
         try_alternate = 300,                  // The client should contact an alternate server for
-                                              // this request.  This error response MUST only be sent if the
-                                              // request included a USERNAME attribute and a valid MESSAGE-
-                                              // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
-                                              // code 400 (Bad Request) is suggested.  This error response MUST
-                                              // be protected with the MESSAGE-INTEGRITY attribute, and receivers
-                                              // MUST validate the MESSAGE-INTEGRITY of this response before
-                                              // redirecting themselves to an alternate server.
-                                              
+        // this request.  This error response MUST only be sent if the
+        // request included a USERNAME attribute and a valid MESSAGE-
+        // INTEGRITY attribute; otherwise, it MUST NOT be sent and error
+        // code 400 (Bad Request) is suggested.  This error response MUST
+        // be protected with the MESSAGE-INTEGRITY attribute, and receivers
+        // MUST validate the MESSAGE-INTEGRITY of this response before
+        // redirecting themselves to an alternate server.
+
         bad_request = 400,                    // The request was malformed.  The client SHOULD NOT
-                                              // retry the request without modification from the previous
-                                              // attempt.  The server may not be able to generate a valid
-                                              // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
-                                              // a valid MESSAGE-INTEGRITY attribute on this response.
-                                              
+        // retry the request without modification from the previous
+        // attempt.  The server may not be able to generate a valid
+        // MESSAGE-INTEGRITY for this error, so the client MUST NOT expect
+        // a valid MESSAGE-INTEGRITY attribute on this response.
+
         unauthorized = 401,                   // The request did not contain the correct
-                                              // credentials to proceed.  The client should retry the request
-                                              // with proper credentials.
-                                              
+        // credentials to proceed.  The client should retry the request
+        // with proper credentials.
+
         forbidden = 403,                      // The request was valid but cannot be performed due
-                                              // to administrative or similar restrictions.
-                                              
+        // to administrative or similar restrictions.
+
         unknown_attribute = 420,              // The server received a STUN packet containing
-                                              // a comprehension-required attribute that it did not understand.
-                                              // The server MUST put this unknown attribute in the UNKNOWN-
-                                              // ATTRIBUTE attribute of its error response.
-                                              
-        allocation_mistmatch = 437,           // A request was received by the server that
-                                              // requires an allocation to be in place, but no allocation exists,
-                                              // or a request was received that requires no allocation, but an
-                                              // allocation exists.
-                                              
+        // a comprehension-required attribute that it did not understand.
+        // The server MUST put this unknown attribute in the UNKNOWN-
+        // ATTRIBUTE attribute of its error response.
+
+        allocation_mistmatch = 437,           // A request was received by the server that requires an allocation
+        // to be in place, but no allocation exists, or a request was
+        // received that requires no allocation, but an allocation exists.
+
         stale_nonce = 438,                    // The NONCE used by the client was no longer valid.
-                                              // The client should retry, using the NONCE provided in the
-                                              // response.
-                                              
-        wrong_credentials = 441,              // The credentials in the(non - Allocate)
-                                              // request do not match those used to create the allocation.
+        // The client should retry, using the NONCE provided in the
+        // response.
 
-        unsupported_transport_protocol = 442, // The Allocate request asked the
-                                              // server to use a transport protocol between the serverand the peer
-                                              // that the server does not support.NOTE: This does NOT refer to
-                                              // the transport protocol used in the 5 - tuple.
+        address_family_not_supported = 440,   // The server does not support the address family requested by the
+        // client.
 
-        allocation_quota_reached = 486,       // No more allocations using this
-                                              // username can be created at the present time.
+        wrong_credentials = 441,              // The credentials in the (non - Allocate) request 
+        // do not match those used to create the allocation.
+
+        unsupported_transport_protocol = 442, // The Allocate request asked the server to use a transport protocol
+        // between the serverand the peer that the server does not support.
+        // NOTE: This does NOT refer to the transport protocol used in the
+        // 5 - tuple.
+
+        peer_address_family_mismatch = 443,   // A peer address is part of a different address family than that of
+        // the relayed transport address of the allocation.
+
+        allocation_quota_reached = 486,       // No more allocations using this username can be created at the
+        // present time.
 
         role_conflict = 487,                  // The client asserted an ICE role (controlling or
-                                              // controlled) that is in conflict with the role of the server.
+        // controlled) that is in conflict with the role of the server.
 
         server_error = 500,                   // Server Error: The server has suffered a temporary error.  The
-                                              // client should try again.
+        // client should try again.
 
-        insufficient_capacity = 508           // The server is unable to carry out the
-                                              // request due to some capacity limit being reached.In an Allocate
-                                              // response, this could be due to the server having no more relayed
-                                              // transport addresses available at that time, having none with the
-                                              // requested properties, or the one that corresponds to the specified
-                                              // reservation token is not available.
+        insufficient_capacity = 508           // The server is unable to carry out the request due to some capacity
+        // limit being reached.In an Allocate response, this could be due
+        // to the server having no more relayed transport addresses available
+        // at that time, having none with the requested properties, or the
+        // one that corresponds to the specified reservation token is not
+        // available.
     };
 
 #pragma pack(push, 4)
@@ -599,6 +610,29 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::xor_relayed_address;
     };
 
+    // This attribute is used in Allocate and Refresh requests to specify
+    // the address type requested by the client.  The value of this
+    // attribute is 4 bytes with the following format:
+    // 
+    //  0                   1                   2                   3
+    //  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // |     Family    |            Reserved                           |
+    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // 
+    //                                Figure 7
+    // 
+    // Family:  There are two values defined for this field and specified in
+    //    Section 14.1 of [RFC8489]: 0x01 for IPv4 addresses and 0x02 for
+    //    IPv6 addresses.
+    // 
+    // Reserved:  At this point, the 24 bits in the Reserved field MUST be
+    //    set to zero by the client and MUST be ignored by the server.
+    struct requested_address_family_attribute : data_view_attribute<std::uint8_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::requested_address_family;
+    };
+
     // This attribute allows the client to request that the port in the
     // relayed transport address be even, and (optionally)that the server
     // reserve the next - higher port number.The value portion of this
@@ -675,6 +709,107 @@ namespace stunpp
         std::array<std::byte, 8> token;
     };
 
+    // This attribute is used by clients to request the allocation of an
+    // IPv4 and IPv6 address type from a server.  It is encoded in the same
+    // way as the REQUESTED-ADDRESS-FAMILY attribute; see Section 18.6.  The
+    // ADDITIONAL-ADDRESS-FAMILY attribute MAY be present in the Allocate
+    // request.  The attribute value of 0x02 (IPv6 address) is the only
+    // valid value in Allocate request.
+    struct additional_address_family : data_view_attribute<std::uint8_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::additional_address_family;
+    };
+
+    // This attribute is used by servers to signal the reason for not
+    // allocating the requested address family.  The value portion of this
+    // attribute is variable length with the following format:
+    // 
+    //     0                   1                   2                   3
+    //     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //    |  Family       |    Reserved             |Class|     Number    |
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //    |      Reason Phrase (variable)                                ..
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // 
+    //                               Figure 10
+    // 
+    // Family:  There are two values defined for this field and specified in
+    //    Section 14.1 of [RFC8489]: 0x01 for IPv4 addresses and 0x02 for
+    //    IPv6 addresses.
+    // 
+    // Reserved:  At this point, the 13 bits in the Reserved field MUST be
+    //    set to zero by the server and MUST be ignored by the client.
+    // 
+    // Class:  The Class represents the hundreds digit of the error code and
+    //    is defined in Section 14.8 of [RFC8489].
+    // 
+    // Number:  This 8-bit field contains the reason the server cannot
+    //    allocate one of the requested address types.  The error code
+    //    values could be either 440 (Address Family not Supported) or 508
+    //    (Insufficient Capacity).  The number representation is defined in
+    //    Section 14.8 of [RFC8489].
+    // 
+    // Reason Phrase:  The recommended reason phrases for error codes 440
+    //    and 508 are explained in Section 19.  The reason phrase MUST be a
+    //    UTF-8 [RFC3629] encoded sequence of less than 128 characters
+    //    (which can be as long as 509 bytes when encoding them or 763 bytes
+    //    when decoding them).
+    struct address_error_code : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::address_error_code;
+
+        address_family family;
+        std::uint8_t zero_bytes;
+        std::uint8_t class_bits : 3;
+        std::uint8_t zero_bits : 5;
+        std::uint8_t number;
+
+        stun_error_code error_code() const noexcept;
+        std::string_view error_message() const noexcept;
+    };
+
+    // This attribute is used by servers to signal the reason a UDP packet
+    // was dropped.  The following is the format of the ICMP attribute.
+    // 
+    //     0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //    |  Reserved                     |  ICMP Type  |  ICMP Code      |
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //    |                          Error Data                           |
+    //    +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // 
+    //                               Figure 11
+    // 
+    // Reserved:  This field MUST be set to 0 when sent and MUST be ignored
+    //    when received.
+    // 
+    // ICMP Type:  The field contains the value of the ICMP type.  Its
+    //    interpretation depends on whether the ICMP was received over IPv4
+    //    or IPv6.
+    // 
+    // ICMP Code:  The field contains the value of the ICMP code.  Its
+    //    interpretation depends on whether the ICMP was received over IPv4
+    //    or IPv6.
+    // 
+    // Error Data:  This field size is 4 bytes long.  If the ICMPv6 type is
+    //    2 ("Packet too big" message) or ICMPv4 type is 3 (Destination
+    //    Unreachable) and Code is 4 (fragmentation needed and DF set), the
+    //    Error Data field will be set to the Maximum Transmission Unit of
+    //    the next-hop link (Section 3.2 of [RFC4443] and Section 4 of
+    //    [RFC1191]).  For other ICMPv6 types and ICMPv4 types and codes,
+    //    the Error Data field MUST be set to zero.
+    struct icmp_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::icmp;
+
+        std::uint16_t reserved;
+        std::uint16_t icmp_type : 7;
+        std::uint16_t icmp_code : 6;
+        std::array<std::byte, 4> error_data;
+    };
+
+
     // The PRIORITY attribute indicates the priority that is to be
     // associated with a peer reflexive candidate, should one be discovered
     // by this check.  It is a 32-bit unsigned integer, and has an attribute
@@ -714,286 +849,4 @@ namespace stunpp
     };
 
 #pragma pack(pop)
-
-    struct message_builder
-    {
-        message_builder(
-            std::span<std::byte> buffer
-        ) noexcept;
-
-        static message_builder create_request(
-            stun_method method,
-            std::span<std::byte> buffer
-        ) noexcept;
-
-        static message_builder create_success_response(
-            stun_method method,
-            const std::array<std::uint32_t, 3>& transaction_id,
-            std::span<std::byte> buffer
-        ) noexcept;
-
-        static message_builder create_error_response(
-            stun_method method,
-            const std::array<std::uint32_t, 3>& transaction_id,
-            stun_error_code error,
-            std::span<std::byte> buffer
-        ) noexcept;
-
-        static message_builder create_indication(
-            stun_method method,
-            std::span<std::byte> buffer
-        ) noexcept;
-
-        // This method should not generally be called. It is primarily here for testing
-        message_builder& set_transaction_id(
-            const std::array<std::uint32_t, 3>& transaction_id
-        ) noexcept;
-
-        message_builder& set_padding_value(
-            std::byte value
-        ) noexcept;
-
-        template<typename attribute_t>
-            requires std::is_base_of_v<string_view_attribute, attribute_t>
-        message_builder& add_attribute(std::string_view value) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>(value.size());
-
-            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
-
-            return *this;
-        }
-
-        template<typename attribute_t>
-            requires std::is_base_of_v<ipv4_mapped_address_attribute, attribute_t>
-        message_builder& add_attribute(const SOCKADDR_IN& address) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>();
-
-            attr->family = address_family::ipv4;
-            attr->port = address.sin_port;
-            std::memcpy(attr->address_bytes.data(), &address.sin_addr, attr->address_bytes.size());
-
-            return *this;
-        }
-
-        template<typename attribute_t>
-            requires std::is_base_of_v<ipv6_mapped_address_attribute, attribute_t>
-        message_builder& add_attribute(const SOCKADDR_IN6& address) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>();
-
-            attr->family = address_family::ipv6;
-            attr->port = address.sin6_port;
-            std::memcpy(attr->address_bytes.data(), &address.sin6_addr, attr->address_bytes.size());
-
-            return *this;
-        }
-
-        template<typename attribute_t>
-            requires std::is_base_of_v<ipv4_xor_mapped_address_attribute, attribute_t>
-        message_builder& add_attribute(
-            const SOCKADDR_IN& address
-        ) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>();
-
-            attr->family = address_family::ipv4;
-
-            attr->port_bytes = util::network_order_from_value(address.sin_port) ^ static_cast<host_uint16_t>(c_stun_magic_cookie >> 16);
-
-            attr->address_bytes = (util::network_order_from_value<std::uint32_t>(address.sin_addr.S_un.S_addr) ^ c_stun_magic_cookie).read();
-
-            return *this;
-        }
-
-        template<typename attribute_t>
-            requires std::is_base_of_v<ipv6_xor_mapped_address_attribute, attribute_t>
-        message_builder& add_attribute(
-            const SOCKADDR_IN6& address
-        ) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>();
-
-            attr->family = address_family::ipv6;
-
-            attr->port_bytes = util::network_order_from_value(address.sin6_port) ^ static_cast<host_uint16_t>(c_stun_magic_cookie >> 16);
-
-            constexpr net_uint32_t magic_cookie = c_stun_magic_cookie;
-
-            auto src = reinterpret_cast<const std::array<const std::uint32_t, 4>*>(address.sin6_addr.u.Byte);
-            
-            auto& id = get_header().transaction_id;
-
-            detail::xor_map_ipv6_address(attr->address_bytes, *src, id);
-
-            return *this;
-        }
-
-        template<typename attribute_t, typename data_t>
-        message_builder& add_attribute(
-            std::span<const data_t> data
-        ) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>(data.size_bytes());
-
-            std::memcpy(detail::get_bytes_after<stun_attribute>(attr), data.data(), data.size() * sizeof(data_t));
-
-            return *this;
-        }
-
-        template<typename attribute_t, std::integral data_t>
-            requires std::is_base_of_v<value_attribute<data_t>, attribute_t>
-        message_builder& add_attribute(
-            util::host_ordered<data_t> data
-        ) noexcept
-        {
-            auto attr = internal_add_attribute<attribute_t>();
-
-            attr->value = data;
-
-            return *this;
-        }
-
-        template<typename attribute_t>
-            requires requires { 
-                sizeof(attribute_t) == sizeof(stun_attribute); 
-                !std::is_base_of_v<string_view_attribute, attribute_t>;
-                !std::is_base_of_v<data_base_attribute, attribute_t>;
-                !std::is_base_of_v<value_base_attribute, attribute_t>;
-            }
-        message_builder& add_attribute() noexcept
-        {
-            std::ignore = internal_add_attribute<attribute_t>();
-
-            return *this;
-        }
-
-        message_builder&& add_integrity(std::string_view username, std::string_view nonce, std::string_view realm, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view username, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view password) & noexcept;
-        std::span<std::byte> add_fingerprint() && noexcept;
-        std::span<std::byte> create() && noexcept;
-    private:
-        std::uint16_t m_buffer_used{0};
-        std::span<std::byte> m_message;
-        std::byte m_padding{ 0 };
-
-        stun_header& get_header() noexcept;
-
-        // These attributes are only able to be included as part of the integrity attribute
-        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept
-        {
-            auto attr = internal_add_attribute<username_attribute>(value.size());
-
-            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
-
-            return *this;
-        }
-
-        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept
-        {
-            auto attr = internal_add_attribute<realm_attribute>(value.size());
-
-            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
-
-            return *this;
-        }
-
-        void add_error_code(stun_error_code error) noexcept;
-
-        template <typename attribute_type>
-        attribute_type* internal_add_attribute(size_t data = 0) noexcept
-        {
-            std::uint16_t padded_size = sizeof(attribute_type) + static_cast<std::uint16_t>(data);
-
-            std::uint16_t remainder = padded_size % 4;
-            if (remainder != 0)
-            {
-                padded_size += (4 - remainder);
-            }
-
-            assert((m_buffer_used + padded_size <= m_message.size()) && "Buffer is too small");
-
-            auto attr_start = m_message.data() + m_buffer_used;
-
-            auto attr = new(attr_start) attribute_type{};
-            attr->type = attribute_type::c_type;
-            attr->size = host_uint16_t{ sizeof(attribute_type) - sizeof(stun_attribute) + static_cast<std::uint16_t>(data) };
-
-            m_buffer_used += padded_size;
-
-            // Zero out any padding
-            if (remainder != 0)
-            {
-                std::memset(m_message.data() + m_buffer_used - (4 - remainder), static_cast<int>(m_padding), 4 - remainder);
-            }
-
-            return attr;
-        }
-    };
-
-    struct stun_attribute_iterator
-    {
-        using iterator_concept = std::forward_iterator_tag;
-        using iterator_category = std::forward_iterator_tag;
-        using difference_type = std::ptrdiff_t;
-        using value_type = const stun_attribute;
-        using pointer = const value_type*;
-        using reference = const value_type&;
-
-        stun_attribute_iterator() noexcept = default;
-
-        stun_attribute_iterator(const stun_attribute* ptr) noexcept : m_ptr{ ptr } {}
-
-        inline reference operator*() const noexcept { return *m_ptr; }
-        inline pointer operator->() noexcept { return m_ptr; }
-
-        stun_attribute_iterator& operator++() noexcept;
-        stun_attribute_iterator operator++(int) noexcept;
-
-        bool operator==(const stun_attribute_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
-
-        template<typename T>
-        const T* as() const noexcept { assert(m_ptr->type == T::c_type);  return static_cast<const T*>(m_ptr); }
-    private:
-        const stun_attribute* m_ptr;
-    };
-
-    struct message_reader
-    {
-        static std::expected<message_reader, std::error_code> create(
-            std::span<const std::byte> buffer
-        ) noexcept;
-
-        const stun_header& get_header() const noexcept;
-
-        bool has_integrity() const noexcept { return m_integrity != nullptr; }
-        const username_attribute* get_username() const noexcept { return m_username; }
-        const realm_attribute* get_realm() const noexcept { return m_realm; }
-        const nonce_attribute* get_nonce() const noexcept { return m_nonce; }
-        std::error_code check_integrity(std::string_view password);
-
-        inline auto begin() const noexcept { return m_begin; }
-        inline auto end() const noexcept { return m_end; }
-
-    private:
-        message_reader(
-            std::span<const std::byte> buffer
-        ) noexcept;
-
-
-        std::error_code validate() noexcept;
-     
-        std::span<const std::byte> m_message;
-        stun_attribute_iterator m_begin{};
-        stun_attribute_iterator m_end{};
-
-        const username_attribute* m_username{};
-        const realm_attribute* m_realm{};
-        const nonce_attribute* m_nonce{};
-        const message_integrity_attribute* m_integrity{};
-
-    };
 }

@@ -1,5 +1,9 @@
 #pragma once 
 
+#include <bit>
+#include <compare>
+#include <cstdint>
+
 namespace stunpp::util
 {
     template <typename T>
@@ -173,4 +177,16 @@ namespace stunpp::util
         data.value = val;
         return data;
     }
+}
+
+namespace stunpp
+{
+    using net_uint16_t = util::network_ordered<std::uint16_t>;
+    using host_uint16_t = util::host_ordered<std::uint16_t>;
+
+    using net_uint32_t = util::network_ordered<std::uint32_t>;
+    using host_uint32_t = util::host_ordered<std::uint32_t>;
+
+    using net_uint64_t = util::network_ordered<std::uint64_t>;
+    using host_uint64_t = util::host_ordered<std::uint64_t>;
 }

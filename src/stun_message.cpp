@@ -1,4 +1,4 @@
-#include "stun_buffer.h"
+#include "stun_message.h"
 
 #include <cassert>
 #include <system_error>
@@ -56,6 +56,11 @@ namespace
             "The NONCE used by the client was no longer valid. "
             "The client should retry, using the NONCE provided in the "
             "response."sv },
+        std::pair{
+            stunpp::stun_error_code::address_family_not_supported,
+            "The server does not support the address family requested by the"
+            "client."sv
+        },
         std::pair{ 
             stunpp::stun_error_code::wrong_credentials,
             "The credentials in the(non - Allocate) "
@@ -66,10 +71,20 @@ namespace
             "server to use a transport protocol between the serverand the peer "
             "that the server does not support.NOTE: This does NOT refer to "
             "the transport protocol used in the 5 - tuple."sv },
+        std::pair{
+            stunpp::stun_error_code::peer_address_family_mismatch,
+            "A peer address is part of a different address family than that of"
+            "the relayed transport address of the allocation."sv
+        },
         std::pair{ 
             stunpp::stun_error_code::allocation_quota_reached,
             "No more allocations using this "
             "username can be created at the present time."sv },
+        std::pair{
+            stunpp::stun_error_code::role_conflict,
+            "The client asserted an ICE role(controlling or "
+            "controlled) that is in conflict with the role of the server."sv
+        },
         std::pair{ 
             stunpp::stun_error_code::server_error,
             "Server Error : The server has suffered a temporary error. The "

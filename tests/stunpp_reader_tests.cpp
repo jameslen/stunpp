@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "stun_buffer.h"
+#include "stun_message.h"
 
 using namespace std::string_view_literals;
 

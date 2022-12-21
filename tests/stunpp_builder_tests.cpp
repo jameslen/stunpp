@@ -1,8 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "stun_buffer.h"
-
-#include "../src/win32/crypto_functions.h"
+#include "stun_message.h"
 
 TEST(stun_builder, binding_request) {
     std::array<std::byte, 1024> buffer;

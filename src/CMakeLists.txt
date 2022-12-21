@@ -1,4 +1,4 @@
-add_library(stunpp stun_buffer.cpp "win32/crypto_functions.h")
+add_library(stunpp "stun_message.cpp" "win32/crypto_functions.h")
 
 target_include_directories(stunpp PUBLIC ../inc)
 
