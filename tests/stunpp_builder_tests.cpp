@@ -22,27 +22,6 @@ TEST(stun_builder, binding_request) {
     EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
 }
 
-TEST(stun_builder, binding_request2) {
-    std::array<std::byte, 1024> buffer;
-    auto builder = stunpp::message_builder::create_request(stunpp::stun_method::binding, buffer)
-        .set_transaction_id({ 0x0BADF00D, 0xDEADBEEF, 0xFEEDF00D })
-        .add_attribute<stunpp::additional_address_family>(stunpp::address_family::ipv4);
-
-    auto packet = std::move(builder).create();
-
-    EXPECT_EQ(packet.size(), sizeof(stunpp::stun_header)) << "Packet did size did not match the size of the header";
-
-    const std::array c_expected_bytes{
-        std::byte{0x00}, std::byte{0x01}, std::byte{0x00}, std::byte{0x00}, // Binding Request, Size 0
-        std::byte{0x21}, std::byte{0x12}, std::byte{0xa4}, std::byte{0x42}, // Magic Cookie
-        std::byte{0x0D}, std::byte{0xF0}, std::byte{0xAD}, std::byte{0x0B}, // Tranaction Id
-        std::byte{0xEF}, std::byte{0xBE}, std::byte{0xAD}, std::byte{0xDE}, // Tranaction Id
-        std::byte{0x0D}, std::byte{0xF0}, std::byte{0xED}, std::byte{0xFE}, // Tranaction Id
-    };
-
-    EXPECT_EQ(std::memcmp(packet.data(), c_expected_bytes.data(), c_expected_bytes.size()), 0) << "Generated packet data did not match";
-}
-
 TEST(stun_builder, binding_response_failure) {
     std::array<std::byte, 1024> buffer;
     auto packet = stunpp::message_builder::create_error_response(
