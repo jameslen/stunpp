@@ -24,9 +24,11 @@ TEST(stun_builder, binding_request) {
 
 TEST(stun_builder, binding_response_failure) {
     std::array<std::byte, 1024> buffer;
-    auto packet = stunpp::message_builder::create_error_response(
-        stunpp::stun_method::binding, { 0x0BADF00D, 0xDEADBEEF, 0xFEEDF00D }, stunpp::stun_error_code::unauthorized, buffer)
-        .create();
+    auto builder = stunpp::message_builder::create_error_response(
+        stunpp::stun_method::binding, { 0x0BADF00D, 0xDEADBEEF, 0xFEEDF00D }, buffer)
+        .add_error_attribute(stunpp::stun_error_code::unauthorized);
+
+    auto packet = std::move(builder).create();
 
     // This should be greater than the sizes because of the error message
     EXPECT_GT(packet.size(), sizeof(stunpp::stun_header) + sizeof(stunpp::error_code_attribute)) << "Packet did size did not match the size of the header";

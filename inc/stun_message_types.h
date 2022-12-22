@@ -763,9 +763,9 @@ namespace stunpp
     //    UTF-8 [RFC3629] encoded sequence of less than 128 characters
     //    (which can be as long as 509 bytes when encoding them or 763 bytes
     //    when decoding them).
-    struct address_error_code : stun_attribute
+    struct address_error_code_attribute : stun_attribute
     {
-        inline static constexpr auto c_type = stun_attribute_type::address_error_code;
+        inline static constexpr auto c_type = stun_attribute_type::address_error_code; // TODO: Create for this
 
         address_family family;
         std::uint8_t zero_bytes;
@@ -809,11 +809,11 @@ namespace stunpp
     //    the Error Data field MUST be set to zero.
     struct icmp_attribute : stun_attribute
     {
-        inline static constexpr auto c_type = stun_attribute_type::icmp;
+        inline static constexpr auto c_type = stun_attribute_type::icmp; // TODO: Create for this
 
         std::uint16_t reserved;
         std::uint16_t icmp_type : 7;
-        std::uint16_t icmp_code : 6;
+        std::uint16_t icmp_code : 9;
         std::array<std::byte, 4> error_data;
     };
 

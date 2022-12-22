@@ -29,7 +29,6 @@ namespace stunpp
         static message_builder create_error_response(
             stun_method method,
             const std::array<std::uint32_t, 3>& transaction_id,
-            stun_error_code error,
             std::span<std::byte> buffer
         ) noexcept;
 
@@ -175,6 +174,11 @@ namespace stunpp
 
             return *this;
         }
+
+        message_builder& add_error_attribute(stun_error_code error) noexcept;
+        message_builder& add_address_error_attribute(address_family family, stun_error_code error) noexcept;
+
+        message_builder& add_icmp_attribute(uint16_t type, uint16_t code, const std::array<std::byte, 4>& data) noexcept;
 
         message_builder&& add_integrity(std::string_view username, std::string_view nonce, std::string_view realm, std::string_view password) & noexcept;
         message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) & noexcept;

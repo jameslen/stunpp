@@ -10,8 +10,6 @@
 using namespace std::string_view_literals;
 namespace
 {
-    constexpr stunpp::host_uint16_t c_method_mask = 0x0110;
-
     const std::array c_error_messages{
         std::pair{
             stunpp::stun_error_code::try_alternate,
@@ -139,22 +137,6 @@ namespace
         return stunpp::host_uint16_t(encode_method(method) | static_cast<uint16_t>(type));
     }
 
-    constexpr stunpp::stun_method_type get_method_type(stunpp::net_uint16_t message_type) noexcept
-    {
-        return stunpp::stun_method_type(static_cast<stunpp::host_uint16_t>(message_type) & c_method_mask);
-    }
-    
-    constexpr stunpp::stun_method get_method(stunpp::net_uint16_t message_type) noexcept
-    {
-        auto stun_method = stunpp::host_uint16_t(message_type) & 0xFEEF;
-        return stunpp::stun_method(
-                 (stun_method & 0x000F)       |
-                ((stun_method & 0x00E0) >> 1) |
-                ((stun_method & 0x0E00) >> 2) |
-                ((stun_method & 0x3000) >> 2)
-        );
-    }
-
     constexpr std::uint32_t c_crcMask = 0xFFFFFFFFUL;
 
     constexpr std::array<std::uint32_t,256> c_crctable{
@@ -251,83 +233,6 @@ namespace stunpp
         }
     }
 
-    stun_method stun_header::get_method() const noexcept
-    {
-        return ::get_method(message_type);
-    }
-
-    stun_method_type stun_header::get_method_type() const noexcept
-    {
-        return ::get_method_type(message_type);
-    }
-
-    SOCKADDR_IN ipv4_mapped_address_attribute::address() const noexcept
-    {
-        SOCKADDR_IN addr;
-        addr.sin_family = AF_INET;
-        std::memcpy(&addr.sin_addr.S_un.S_addr, address_bytes.data(), address_bytes.size());
-        addr.sin_port = port.read();;
-        return addr;
-    }
-
-    SOCKADDR_IN6 ipv6_mapped_address_attribute::address() const noexcept
-    {
-        SOCKADDR_IN6 addr{};
-        addr.sin6_family = AF_INET6;
-        std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
-        addr.sin6_port = port.read();
-        return addr;
-    }
-
-    net_uint16_t xor_mapped_address_attribute::port() const noexcept
-    {
-        return port_bytes ^ host_uint16_t(c_stun_magic_cookie >> 16);
-    }
-
-    SOCKADDR_IN ipv4_xor_mapped_address_attribute::address() const noexcept
-    {
-        SOCKADDR_IN addr;
-        addr.sin_family = AF_INET;
-        addr.sin_addr.S_un.S_addr = (util::network_order_from_value(address_bytes) ^ c_stun_magic_cookie).read();
-        addr.sin_port = port().read();
-        return addr;
-    }
-
-    SOCKADDR_IN6 ipv6_xor_mapped_address_attribute::address(std::span<const std::uint32_t, 3> message_id) const noexcept
-    {
-        SOCKADDR_IN6 addr{};
-        addr.sin6_family = AF_INET6;
-        std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
-
-        auto dst = reinterpret_cast<std::array<std::uint32_t, 4>*>(addr.sin6_addr.u.Byte);
-
-        detail::xor_map_ipv6_address(*dst, address_bytes, message_id);
-
-        addr.sin6_port = port().read();
-        return addr;
-    }
-
-    std::string_view string_view_attribute::value() const noexcept
-    {
-        return { detail::get_bytes_after_as<const char>(this), static_cast<host_uint16_t>(size) };
-    }
-
-    stun_error_code error_code_attribute::error_code() const noexcept
-    {
-        return stun_error_code{ static_cast<std::uint32_t>(class_bits * 100 + number) };
-    }
-
-    std::string_view error_code_attribute::error_message() const noexcept
-    {
-        auto local_size = host_uint16_t{ size };
-        std::uint16_t string_length = local_size - sizeof(error_code_attribute) + sizeof(stun_attribute);
-        if( string_length == 0 )
-        {
-            return {};
-        }
-        return std::string_view{ detail::get_bytes_after_as<const char>(this), string_length };
-    }
-
     message_builder::message_builder(
         std::span<std::byte> buffer
     ) noexcept :
@@ -375,7 +280,6 @@ namespace stunpp
     message_builder message_builder::create_error_response(
         stun_method method,
         const std::array<std::uint32_t, 3>& transaction_id,
-        stun_error_code error,
         std::span<std::byte> buffer
     ) noexcept
     {
@@ -384,8 +288,6 @@ namespace stunpp
         auto& header = builder.get_header();
         header.message_type = encode_message_type(method, stun_method_type::error_response);
         header.transaction_id = transaction_id;
-
-        builder.add_error_code(error);
 
         return builder;
     }
@@ -422,7 +324,7 @@ namespace stunpp
         return *this;
     }
 
-    void message_builder::add_error_code(
+    message_builder& message_builder::add_error_attribute(
         stun_error_code error
     ) noexcept
     {
@@ -438,6 +340,47 @@ namespace stunpp
         attr->zero_bits = 0;
 
         std::memcpy(detail::get_bytes_after(attr), message.data(), message.size());
+
+        return *this;
+    }
+
+    message_builder& message_builder::add_address_error_attribute(
+        address_family family,
+        stun_error_code error
+    ) noexcept
+    {
+        auto message = get_error_message(error);
+        auto attr = internal_add_attribute<address_error_code_attribute>(message.size());
+
+        attr->family = family;
+
+        auto hundreds = static_cast<uint32_t>(error) / 100;
+        attr->class_bits = hundreds;
+
+        std::uint8_t error_value = static_cast<uint32_t>(error) % 100;
+        attr->number = error_value;
+
+        attr->zero_bits = 0;
+
+        std::memcpy(detail::get_bytes_after(attr), message.data(), message.size());
+
+        return *this;
+    }
+
+    message_builder& message_builder::add_icmp_attribute(
+        uint16_t type,
+        uint16_t code,
+        const std::array<std::byte, 4>& data
+    ) noexcept
+    {
+        auto attr = internal_add_attribute<icmp_attribute>();
+
+        attr->reserved = 0;
+        attr->icmp_type = type;
+        attr->icmp_code = code;
+        attr->error_data = data;
+
+        return *this;
     }
 
     message_builder&& message_builder::add_integrity(
