@@ -42,6 +42,17 @@ namespace stunpp
         {
             return reinterpret_cast<const data_t*>(get_bytes_after(ptr, offset));
         }
+
+        template <uint32_t round_value, std::integral value_t>
+        constexpr [[nodiscard]] stunpp::util::host_ordered<value_t> round(stunpp::util::host_ordered<value_t> value) noexcept
+        {
+            value_t remainder = value % round_value;
+            if (remainder != 0)
+            {
+                value += (round_value - remainder);
+            }
+            return value;
+        }
     }
 
     constexpr host_uint32_t c_stun_magic_cookie = 0x2112A442;
@@ -78,7 +89,7 @@ namespace stunpp
     // easier
     enum class stun_attribute_type : std::uint16_t
     {
-        // STUN RFC 5389 Required Range
+        // STUN RFC 8489 Required Range
         reserved0                = util::hton<std::uint16_t>(0x0000),
         mapped_address           = util::hton<std::uint16_t>(0x0001),
         reserved1                = util::hton<std::uint16_t>(0x0002),
@@ -91,14 +102,12 @@ namespace stunpp
         error_code               = util::hton<std::uint16_t>(0x0009),
         unknown_attributes       = util::hton<std::uint16_t>(0x000A),
         reserved6                = util::hton<std::uint16_t>(0x000B),
+        message_integrity_sha256 = util::hton<std::uint16_t>(0x001C),
+        password_algorithm       = util::hton<std::uint16_t>(0x001D),
+        userhash                 = util::hton<std::uint16_t>(0x001E),
         realm                    = util::hton<std::uint16_t>(0x0014),
         nonce                    = util::hton<std::uint16_t>(0x0015),
         xor_mapped_address       = util::hton<std::uint16_t>(0x0020),
-
-        // STUN RFC 8489
-        message_integrity_sha265 = util::hton<std::uint16_t>(0x001C),
-        password_algorithm       = util::hton<std::uint16_t>(0x001D),
-        userhash                 = util::hton<std::uint16_t>(0x001E),
 
         // TURN RFC 8656
         channel_number           = util::hton<std::uint16_t>(0x000C),
@@ -120,14 +129,12 @@ namespace stunpp
         ice_controlled           = util::hton<std::uint16_t>(0x8029),
         ice_controlling          = util::hton<std::uint16_t>(0x802A),
 
-        // STUN RFC 5389 Optional Range
+        // STUN RFC 8489 Optional Range
+        password_algorithms      = util::hton<std::uint16_t>(0x8002),
+        alternate_domain         = util::hton<std::uint16_t>(0x8003),
         software                 = util::hton<std::uint16_t>(0x8022),
         alternate_server         = util::hton<std::uint16_t>(0x8023),
         fingerprint              = util::hton<std::uint16_t>(0x8028),
-
-        // STUN RFC 8489 Optional Range
-        password_algorithms      = util::hton<std::uint16_t>(0x8022),
-        alternate_domain         = util::hton<std::uint16_t>(0x8023),
 
         // TURN RFC 8656 Optional Range
         additional_address_family = util::hton<std::uint16_t>(0x8000),
@@ -273,7 +280,73 @@ namespace stunpp
         std::string_view value() const noexcept;
     };
 
-    struct data_base_attribute : stun_attribute
+    struct iterable_base_attribute : stun_attribute
+    {
+    };
+
+    template <typename T>
+    struct attribute_data_iterator
+    {
+        using iterator_concept = std::forward_iterator_tag;
+        using iterator_category = std::forward_iterator_tag;
+        using difference_type = std::ptrdiff_t;
+        using value_type = const T;
+        using pointer = const value_type*;
+        using reference = const value_type&;
+
+        attribute_data_iterator() noexcept = default;
+
+        attribute_data_iterator(const T* ptr) noexcept : m_ptr{ ptr } {}
+
+        inline reference operator*() const noexcept { return *m_ptr; }
+        inline pointer operator->() const noexcept { return m_ptr; }
+
+        attribute_data_iterator& operator++() noexcept
+        {
+            auto padded_size = detail::round<4>(static_cast<host_uint16_t>(m_ptr->length));
+
+            m_ptr = detail::get_bytes_after_as<const T>(m_ptr, padded_size);
+
+            return *this;
+        }
+
+        attribute_data_iterator operator++(int) noexcept
+        {
+            auto result = *this;
+            ++(*this);
+            return result;
+        }
+
+        bool operator==(const attribute_data_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
+
+    private:
+        const T* m_ptr;
+    };
+
+    template <typename T>
+    struct iterable_attribute : iterable_base_attribute
+    {
+        using value_t = T;
+
+        attribute_data_iterator<value_t> begin() noexcept
+        {
+            return attribute_data_iterator<value_t>(
+                detail::get_bytes_after_as<const value_t>(this)
+            );
+        }
+
+        attribute_data_iterator<value_t> end() noexcept
+        {
+            return attribute_data_iterator<value_t>(
+                detail::get_bytes_after_as<const value_t>(
+                    this, 
+                    detail::round<4>(static_cast<host_uint16_t>(size))
+                )
+            );
+        }
+    };
+
+    struct data_base_attribute : iterable_base_attribute
     {
     };
 
@@ -415,6 +488,46 @@ namespace stunpp
         std::array<std::byte, 20> hmac_sha1;
     };
 
+    // The MESSAGE-INTEGRITY-SHA256 attribute contains an HMAC-SHA256
+    // [RFC2104] of the STUN message.  The MESSAGE-INTEGRITY-SHA256
+    // attribute can be present in any STUN message type.  The MESSAGE-
+    // INTEGRITY-SHA256 attribute contains an initial portion of the HMAC-
+    // SHA-256 [RFC2104] of the STUN message.  The value will be at most 32
+    // bytes, but it MUST be at least 16 bytes and MUST be a multiple of 4
+    // bytes.  The value must be the full 32 bytes unless the STUN Usage
+    // explicitly specifies that truncation is allowed.  STUN Usages may
+    // specify a minimum length longer than 16 bytes.
+    // 
+    // The key for the HMAC depends on which credential mechanism is in use.
+    // Section 9.1.1 defines the key for the short-term credential
+    // mechanism, and Section 9.2.2 defines the key for the long-term
+    // credential mechanism.  Other credential mechanism MUST define the key
+    // that is used for the HMAC.
+    // 
+    // The text used as input to HMAC is the STUN message, up to and
+    // including the attribute preceding the MESSAGE-INTEGRITY-SHA256
+    // attribute.  The Length field of the STUN message header is adjusted
+    // to point to the end of the MESSAGE-INTEGRITY-SHA256 attribute.  The
+    // value of the MESSAGE-INTEGRITY-SHA256 attribute is set to a dummy
+    // value.
+    // 
+    // Once the computation is performed, the value of the MESSAGE-
+    // INTEGRITY-SHA256 attribute is filled in, and the value of the length
+    // in the STUN header is set to its correct value -- the length of the
+    // entire message.  Similarly, when validating the MESSAGE-INTEGRITY-
+    // SHA256, the Length field in the STUN header must be adjusted to point
+    // to the end of the MESSAGE-INTEGRITY-SHA256 attribute prior to
+    // calculating the HMAC over the STUN message, up to and including the
+    // attribute preceding the MESSAGE-INTEGRITY-SHA256 attribute.  Such
+    // adjustment is necessary when attributes, such as FINGERPRINT, appear
+    // after MESSAGE-INTEGRITY-SHA256.  See also Appendix B.1 for examples
+    // of such calculations.
+    struct message_integrity_sha256_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::message_integrity_sha256;
+        std::array<std::byte, 32> hmac_sha256;
+    };
+
     // The FINGERPRINT attribute MAY be present in all STUN messages.  The
     // value of the attribute is computed as the CRC-32 of the STUN message
     // up to (but excluding) the FINGERPRINT attribute itself, XOR'ed with
@@ -488,6 +601,81 @@ namespace stunpp
     struct nonce_attribute : string_view_attribute
     {
         inline static constexpr auto c_type = stun_attribute_type::nonce;
+    };
+
+    // The PASSWORD-ALGORITHMS attribute may be present in requests and
+    // responses.  It contains the list of algorithms that the server can
+    // use to derive the long-term password.
+    // 
+    // The set of known algorithms is maintained by IANA.  The initial set
+    // defined by this specification is found in Section 18.5.
+    // 
+    // The attribute contains a list of algorithm numbers and variable
+    // length parameters.  The algorithm number is a 16-bit value as defined
+    // in Section 18.5.  The parameters start with the length (prior to
+    // padding) of the parameters as a 16-bit value, followed by the
+    // parameters that are specific to each algorithm.  The parameters are
+    // padded to a 32-bit boundary, in the same manner as an attribute.
+    // 
+    //    0                   1                   2                   3
+    //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |         Algorithm 1           | Algorithm 1 Parameters Length |
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |                    Algorithm 1 Parameters (variable)
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |         Algorithm 2           | Algorithm 2 Parameters Length |
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |                    Algorithm 2 Parameters (variable)
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |                                                             ...
+    // 
+    //           Figure 8: Format of PASSWORD-ALGORITHMS Attribute
+    struct password_algorithm_value
+    {
+        password_algorithms algorithm;
+        net_uint16_t length;
+
+        inline std::span<const std::byte> data() const noexcept
+        {
+            return { detail::get_bytes_after(this), static_cast<host_uint16_t>(length) };
+        }
+    };
+
+    struct password_algorithms_attribute : iterable_attribute<password_algorithm_value>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::password_algorithms;
+    };
+
+    // The PASSWORD-ALGORITHM attribute is present only in requests.  It
+    // contains the algorithm that the server must use to derive a key from
+    // the long-term password.
+    // 
+    // The set of known algorithms is maintained by IANA.  The initial set
+    // defined by this specification is found in Section 18.5.
+    // 
+    // The attribute contains an algorithm number and variable length
+    // parameters.  The algorithm number is a 16-bit value as defined in
+    // Section 18.5.  The parameters starts with the length (prior to
+    // padding) of the parameters as a 16-bit value, followed by the
+    // parameters that are specific to the algorithm.  The parameters are
+    // padded to a 32-bit boundary, in the same manner as an attribute.
+    // Similarly, the padding bits MUST be set to zero on sending and MUST
+    // be ignored by the receiver.
+    // 
+    //    0                   1                   2                   3
+    //    0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |          Algorithm           |  Algorithm Parameters Length   |
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //   |                    Algorithm Parameters (variable)
+    //   +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // 
+    //           Figure 9: Format of PASSWORD-ALGORITHM Attribute
+    struct password_algorithm_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::password_algorithm;
+        password_algorithm_value value;
     };
 
     // The UNKNOWN-ATTRIBUTES attribute is present only in an error response

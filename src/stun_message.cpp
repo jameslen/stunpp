@@ -109,17 +109,6 @@ namespace
         return {};
     }
 
-    template <uint32_t round_value, std::integral value_t>
-    constexpr [[nodiscard]] stunpp::util::host_ordered<value_t> round(stunpp::util::host_ordered<value_t> value) noexcept
-    {
-        value_t remainder = value % round_value;
-        if (remainder != 0)
-        {
-            value += (round_value - remainder);
-        }
-        return value;
-    }
-
     constexpr uint16_t encode_method(
         stunpp::stun_method method
     ) noexcept
@@ -383,70 +372,14 @@ namespace stunpp
         return *this;
     }
 
-    message_builder&& message_builder::add_integrity(
-        std::string_view username,
-        std::string_view nonce,
-        std::string_view realm,
-        std::string_view password
+    message_builder&& message_builder::add_long_term_integrity(
+        std::span<const std::uint8_t> key
     ) & noexcept
     {
-        add_attribute<username_attribute>(username);
-        add_attribute<nonce_attribute>(nonce);
-        add_attribute<realm_attribute>(realm);
-
         auto attr = internal_add_attribute<message_integrity_attribute>();
-        auto& header = get_header();
-
-        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
-        header.message_length = message_length;
-
-        // The key for the HMAC depends on whether long-term or short-term
-        // credentials are in use.  For long-term credentials, the key is 16
-        // bytes:
-        // 
-        //          key = MD5(username ":" realm ":" SASLprep(password))
-        // 
-        // That is, the 16-byte key is formed by taking the MD5 hash of the
-        // result of concatenating the following five fields: (1) the username,
-        // with any quotes and trailing nulls removed, as taken from the
-        // USERNAME attribute (in which case SASLprep has already been applied);
-        // (2) a single colon; (3) the realm, with any quotes and trailing nulls
-        // removed; (4) a single colon; and (5) the password, with any trailing
-        // nulls removed and after processing using SASLprep.  For example, if
-        // the username was 'user', the realm was 'realm', and the password was
-        // 'pass', then the 16-byte HMAC key would be the result of performing
-        // an MD5 hash on the string 'user:realm:pass', the resulting hash being
-        // 0x8493fbc53ba582fb4c044c456bdc40eb.
-        std::array<std::byte, 2048> key;
-        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
-        std::memcpy(key.data(), username.data(), username.size());
-        key[username.size()] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-        key[username.size() + realm.size() + 1] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
-        attr->hmac_sha1 = {};
-        compute_integrity(
-            attr->hmac_sha1,
-            compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 }),
-            header,
-            { detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
-        );
-
-        return std::move(*this);
-    }
-
-    message_builder&& message_builder::add_integrity(
-        std::string_view username,
-        std::string_view realm,
-        std::string_view password
-    ) & noexcept
-    {
-        add_attribute<username_attribute>(username);
-        add_attribute<realm_attribute>(realm);
 
         host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
 
-        auto attr = internal_add_attribute<message_integrity_attribute>();
         auto& header = get_header();
         header.message_length = message_length;
 
@@ -467,54 +400,17 @@ namespace stunpp
         // 'pass', then the 16-byte HMAC key would be the result of performing
         // an MD5 hash on the string 'user:realm:pass', the resulting hash being
         // 0x8493fbc53ba582fb4c044c456bdc40eb.
-        std::array<std::byte, 2048> key;
-        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
-        std::memcpy(key.data(), username.data(), username.size());
-        key[username.size()] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
-        key[username.size() + realm.size() + 1] = std::byte{ ':' };
-        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
-
         compute_integrity(
             attr->hmac_sha1,
-            compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 }),
+            key,
             header,
-            std::span<std::byte>{ detail::get_bytes_after(&header), message_length }
+            std::span<std::byte>{ detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
         );
 
         return std::move(*this);
     }
 
-    message_builder&& message_builder::add_integrity(
-        std::string_view username,
-        std::string_view password
-    ) & noexcept
-    {
-        add_attribute<username_attribute>(username);
-        auto attr = internal_add_attribute<message_integrity_attribute>();
-        auto& header = get_header();
-
-        host_uint16_t message_length = m_buffer_used - sizeof(stun_header);
-        header.message_length = message_length;
-
-        // For short-term credentials:
-        // 
-        //                        key = SASLprep(password)
-        // 
-        // where MD5 is defined in RFC 1321 [RFC1321] and SASLprep() is defined
-        // in RFC 4013 [RFC4013].
-        attr->hmac_sha1 = {};
-        compute_integrity(
-            attr->hmac_sha1,
-            { reinterpret_cast<const std::uint8_t*>(password.data()), password.size() },
-            header,
-            { detail::get_bytes_after(&header), m_buffer_used - sizeof(stun_header) - sizeof(message_integrity_attribute) }
-        );
-
-        return std::move(*this);
-    }
-
-    message_builder&& message_builder::add_integrity(
+    message_builder&& message_builder::add_short_term_integrity(
         std::string_view password
     ) & noexcept
     {
@@ -567,6 +463,23 @@ namespace stunpp
         return { m_message.data(), m_buffer_used };
     }
 
+    std::array<std::uint8_t, 16> message_builder::generate_md5_key(
+        std::string_view username,
+        std::string_view realm,
+        std::string_view password
+    ) noexcept
+    {
+        std::array<std::byte, 2048> key;
+        assert(username.size() + realm.size() + password.size() + 2 <= key.size() && "Key buffer is too small");
+        std::memcpy(key.data(), username.data(), username.size());
+        key[username.size()] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + 1, realm.data(), realm.size());
+        key[username.size() + realm.size() + 1] = std::byte{ ':' };
+        std::memcpy(key.data() + username.size() + realm.size() + 2, password.data(), password.size());
+
+        return compute_md5_hash(std::span<std::byte>{ key.data(), username.size() + realm.size() + password.size() + 2 });
+    }
+
     stun_header& message_builder::get_header() noexcept
     {
         return *reinterpret_cast<stun_header*>(m_message.data());
@@ -574,7 +487,7 @@ namespace stunpp
 
     stun_attribute_iterator& stun_attribute_iterator::operator++() noexcept
     {
-        auto padded_size = round<4>(static_cast<host_uint16_t>(m_ptr->size));
+        auto padded_size = detail::round<4>(static_cast<host_uint16_t>(m_ptr->size));
 
         m_ptr = detail::get_bytes_after_as<const stun_attribute>(m_ptr, padded_size);
 
@@ -658,7 +571,7 @@ namespace stunpp
 
         while (size < message_length)
         {
-            auto padded_size = round<4>(static_cast<host_uint16_t>(attribute->size));
+            auto padded_size = detail::round<4>(static_cast<host_uint16_t>(attribute->size));
             size += sizeof(stun_attribute) + padded_size;
 
             if (size > message_length)
@@ -754,7 +667,7 @@ namespace stunpp
         host_uint16_t message_length = header.message_length;
         while (size < message_length)
         {
-            std::uint16_t padded_size = sizeof(stun_attribute) + round<4>(static_cast<host_uint16_t>(attribute->size));
+            std::uint16_t padded_size = sizeof(stun_attribute) + detail::round<4>(static_cast<host_uint16_t>(attribute->size));
 
             size += padded_size;
 
