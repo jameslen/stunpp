@@ -44,7 +44,6 @@
 			"name": "x64-test-github",
 			"displayName": "x64 Test github",
 			"inherits": "windows-base",
-			"inheritEnvironments": [ "msvc_x64_x64" ],
 			"architecture": {
 				"value": "x64",
 				"strategy": "external"
