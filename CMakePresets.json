@@ -4,11 +4,9 @@
 		{
 			"name": "windows-base",
 			"hidden": true,
-			"generator": "Ninja",
 			"binaryDir": "${sourceDir}/out/build/${presetName}",
 			"installDir": "${sourceDir}/out/install/${presetName}",
 			"cacheVariables": {
-				"CMAKE_C_COMPILER": "cl.exe",
 				"CMAKE_CXX_COMPILER": "cl.exe"
 			},
 			"condition": {
@@ -32,6 +30,19 @@
 		{
 			"name": "x64-test",
 			"displayName": "x64 Test",
+			"inherits": "windows-base",
+			"architecture": {
+				"value": "x64",
+				"strategy": "external"
+			},
+			"cacheVariables": {
+				"CMAKE_BUILD_TYPE": "Debug",
+				"BUILDING_TEST": true
+			}
+		},
+		{
+			"name": "x64-test-github",
+			"displayName": "x64 Test github",
 			"inherits": "windows-base",
 			"architecture": {
 				"value": "x64",
