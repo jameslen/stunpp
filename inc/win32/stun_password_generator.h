@@ -70,15 +70,13 @@ namespace stunpp
         static std::array<uint32_t, 3> generate_id() noexcept;
 
     private:
-        std::array<uint8_t, 16> compute_md5_hash(
-            std::span<const std::byte> key
-        ) const noexcept;
-
-
-
         BCRYPT_ALG_HANDLE md5_alg_handle{};
         BCRYPT_HASH_HANDLE md5_hash_handle{};
         std::array<std::uint8_t, 1024> md5_hash_object_buffer{};
+
+        BCRYPT_ALG_HANDLE sha256_alg_handle{};
+        BCRYPT_HASH_HANDLE sha256_hash_handle{};
+        std::array<std::uint8_t, 1024> sha256_hash_object_buffer{};
 
         BCRYPT_ALG_HANDLE sha1hmac_alg_handle{};
 
