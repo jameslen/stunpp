@@ -154,7 +154,24 @@ namespace stunpp
     enum class password_algorithms : std::uint16_t
     {
         reserved = 0,
+
+        // This password algorithm is taken from[RFC1321].
+        // 
+        // The key length is 16 bytes, and the parameters value is empty.
+        // 
+        // Note: This algorithm MUST only be used for compatibility with
+        // legacy systems.
+        // 
+        // key = MD5(username ":" OpaqueString(realm)
+        //     ":" OpaqueString(password))
         md5      = util::hton<std::uint16_t>(0x0001),
+
+        // This password algorithm is taken from[RFC7616].
+        // 
+        // The key length is 32 bytes, and the parameters value is empty.
+        // 
+        // key = SHA - 256(username ":" OpaqueString(realm)
+        //     ":" OpaqueString(password))
         sha_256  = util::hton<std::uint16_t>(0x0002),
     };
 

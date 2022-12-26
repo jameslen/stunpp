@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "stun_message.h"
+#include "stun_password_generator.h"
 
 TEST(stun_builder, binding_request) {
     std::array<std::byte, 1024> buffer;
@@ -101,6 +102,7 @@ TEST(stun_builder, binding_request_fingerprint) {
 
 TEST(stun_builder, rfc5769_request) {
     // Binding request test
+    stunpp::stun_password_generator generator{};
     std::array<std::byte, 1024> buffer;
     auto packet = stunpp::message_builder::create_request(stunpp::stun_method::binding, buffer)
         .set_padding_value(std::byte{0x20})
@@ -109,7 +111,10 @@ TEST(stun_builder, rfc5769_request) {
         .add_attribute<stunpp::priority_attribute>(stunpp::host_uint32_t(0x6E0001FF))
         .add_attribute<stunpp::ice_controlled_attribute>(stunpp::host_uint64_t(0x932ff9b151263b36))
         .add_attribute<stunpp::username_attribute>("evtj:h6vY")
-        .add_short_term_integrity("VOkJxbRl1RmTxUk/WvJxBt")
+        .add_sha1hmac_message_integrity(
+            generator,
+            generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+        )
         .add_fingerprint();
 
     const std::array c_expected_bytes{
@@ -147,6 +152,7 @@ TEST(stun_builder, rfc5769_request) {
 }
 
 TEST(stun_builder, rfc5769_ipv4_response) {
+    stunpp::stun_password_generator generator{};
     SOCKADDR_IN address;
     address.sin_family = AF_INET;
     address.sin_port = stunpp::util::hton<std::uint16_t>(32853);
@@ -161,7 +167,10 @@ TEST(stun_builder, rfc5769_ipv4_response) {
         .set_padding_value(std::byte{ 0x20 })
         .add_attribute<stunpp::software_attribute>("test vector")
         .add_attribute<stunpp::ipv4_xor_mapped_address_attribute>(address)
-        .add_short_term_integrity("VOkJxbRl1RmTxUk/WvJxBt")
+        .add_sha1hmac_message_integrity(
+            generator,
+            generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+        )
         .add_fingerprint();
 
     const std::array c_expected_bytes{
@@ -192,6 +201,7 @@ TEST(stun_builder, rfc5769_ipv4_response) {
 }
 
 TEST(stun_builder, rfc5769_ipv6_response) {
+    stunpp::stun_password_generator generator{};
     SOCKADDR_IN6 address;
     address.sin6_family = AF_INET6;
     address.sin6_port = stunpp::util::hton<std::uint16_t>(32853);
@@ -212,7 +222,10 @@ TEST(stun_builder, rfc5769_ipv6_response) {
         .set_padding_value(std::byte{ 0x20 })
         .add_attribute<stunpp::software_attribute>("test vector")
         .add_attribute<stunpp::ipv6_xor_mapped_address_attribute>(address)
-        .add_short_term_integrity("VOkJxbRl1RmTxUk/WvJxBt")
+        .add_sha1hmac_message_integrity(
+            generator,
+            generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+        )
         .add_fingerprint();
 
     const std::array c_expected_bytes{
@@ -248,15 +261,16 @@ TEST(stun_builder, rfc5769_ipv6_response) {
 
 
 TEST(stun_builder, rfc5769_long_term_credentials) {
-    // Binding request test
+    stunpp::stun_password_generator generator{};
     std::array<std::byte, 1024> buffer;
     auto packet = stunpp::message_builder::create_request(stunpp::stun_method::binding, buffer)
         .set_transaction_id({ 0x3334ad78, 0xc072adc6, 0x2e41da29 })
         .add_attribute<stunpp::username_attribute>(reinterpret_cast<const char*>(u8"\u30DE\u30C8\u30EA\u30C3\u30AF\u30B9"))
         .add_attribute<stunpp::nonce_attribute>("f//499k954d6OL34oL9FSTvy64sA")
         .add_attribute<stunpp::realm_attribute>("example.org")
-        .add_long_term_integrity(
-            stunpp::message_builder::generate_md5_key(
+        .add_sha1hmac_message_integrity(
+            generator,
+            generator.generate_long_term_md5_key(
                 reinterpret_cast<const char*>(u8"\u30DE\u30C8\u30EA\u30C3\u30AF\u30B9"),
                 "example.org",
                 "TheMatrIX"

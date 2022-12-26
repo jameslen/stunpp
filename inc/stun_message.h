@@ -39,6 +39,8 @@ namespace stunpp
         concept simple_stun_attribute = is_simple_stun_attribute<T>;
     }
 
+    class stun_password_generator;
+
     struct message_builder;
 
     template <typename attribute_t>
@@ -244,15 +246,21 @@ namespace stunpp
 
         message_builder& add_icmp_attribute(uint16_t type, uint16_t code, const std::array<std::byte, 4>& data) noexcept;
 
-        message_builder&& add_short_term_integrity(std::string_view password) & noexcept;
-        message_builder&& add_long_term_integrity(std::span<const std::uint8_t> key) & noexcept;
+        message_builder&& add_sha1hmac_message_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) & noexcept;
+
+        message_builder&& add_sha256hmac_message_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) & noexcept;
 
         std::span<std::byte> add_fingerprint() && noexcept;
         std::span<std::byte> create() && noexcept;
 
         std::uint16_t append(std::span<const std::byte> data) noexcept;
 
-        static std::array<std::uint8_t, 16> generate_md5_key(std::string_view username, std::string_view realm, std::string_view password) noexcept;
     private:
         std::uint16_t m_buffer_used{0};
         std::span<std::byte> m_message;
@@ -328,11 +336,14 @@ namespace stunpp
 
         const stun_header& get_header() const noexcept;
 
-        bool has_integrity() const noexcept { return m_integrity != nullptr; }
+        bool has_integrity() const noexcept { return m_integrity != nullptr || m_integrity_sha256 != nullptr; }
         const username_attribute* get_username() const noexcept { return m_username; }
         const realm_attribute* get_realm() const noexcept { return m_realm; }
         const nonce_attribute* get_nonce() const noexcept { return m_nonce; }
-        std::error_code check_integrity(std::string_view password);
+        std::error_code check_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) const noexcept;
 
         inline auto begin() const noexcept { return m_begin; }
         inline auto end() const noexcept { return m_end; }
@@ -341,7 +352,6 @@ namespace stunpp
         message_reader(
             std::span<const std::byte> buffer
         ) noexcept;
-
 
         std::error_code validate() noexcept;
      
@@ -353,6 +363,7 @@ namespace stunpp
         const realm_attribute* m_realm{};
         const nonce_attribute* m_nonce{};
         const message_integrity_attribute* m_integrity{};
+        const message_integrity_sha256_attribute* m_integrity_sha256{};
 
     };
 }

@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "stun_message.h"
+#include "stun_password_generator.h"
 
 using namespace std::string_view_literals;
 
@@ -205,6 +206,7 @@ TEST(stun_reader, binding_request_fingerprint) {
 }
 
 TEST(stun_reader, rfc5769_request) {
+    stunpp::stun_password_generator generator{};
     const std::array c_message_bytes{
         std::byte{ 0x00 }, std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x58 }, // Binding request, Size 88
         std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Magic Cookie
@@ -251,7 +253,10 @@ TEST(stun_reader, rfc5769_request) {
 
         if (reader.has_integrity())
         {
-            if (!reader.check_integrity("VOkJxbRl1RmTxUk/WvJxBt"))
+            if (!reader.check_integrity(
+                generator,
+                generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+            ))
             {
                 auto iter = reader.begin();
 
@@ -306,6 +311,8 @@ TEST(stun_reader, rfc5769_request) {
 }
 
 TEST(stun_reader, rfc5769_ipv4_response) {
+    stunpp::stun_password_generator generator{};
+
     SOCKADDR_IN result_address;
     result_address.sin_family = AF_INET;
     result_address.sin_port = stunpp::util::hton<std::uint16_t>(32853);
@@ -353,7 +360,10 @@ TEST(stun_reader, rfc5769_ipv4_response) {
 
         if (reader.has_integrity())
         {
-            if (!reader.check_integrity("VOkJxbRl1RmTxUk/WvJxBt"))
+            if (!reader.check_integrity(
+                generator,
+                generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+            ))
             {
                 auto iter = reader.begin();
 
@@ -397,6 +407,8 @@ TEST(stun_reader, rfc5769_ipv4_response) {
 }
 
 TEST(stun_reader, rfc5769_ipv6_response) {
+    stunpp::stun_password_generator generator{};
+
     SOCKADDR_IN6 result_address{};
     result_address.sin6_family = AF_INET6;
     result_address.sin6_port = stunpp::util::hton<std::uint16_t>(32853);
@@ -452,7 +464,10 @@ TEST(stun_reader, rfc5769_ipv6_response) {
 
         if (reader.has_integrity())
         {
-            if (!reader.check_integrity("VOkJxbRl1RmTxUk/WvJxBt"))
+            if (!reader.check_integrity(
+                generator,
+                generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
+            ))
             {
                 auto iter = reader.begin();
 
@@ -498,6 +513,8 @@ TEST(stun_reader, rfc5769_ipv6_response) {
 
 
 TEST(stun_reader, rfc5769_long_term_credentials) {
+    stunpp::stun_password_generator generator{};
+
     const std::array c_message_bytes{
         std::byte{ 0x00 }, std::byte{ 0x01 }, std::byte{ 0x00 }, std::byte{ 0x60 }, // Binding request, Size 88
         std::byte{ 0x21 }, std::byte{ 0x12 }, std::byte{ 0xa4 }, std::byte{ 0x42 }, // Mabig Cookie
@@ -546,7 +563,14 @@ TEST(stun_reader, rfc5769_long_term_credentials) {
 
         if (reader.has_integrity())
         {
-            if (!reader.check_integrity("TheMatrIX"))
+            if (!reader.check_integrity(
+                generator,
+                generator.generate_long_term_md5_key(
+                    reader.get_username()->value(),
+                    reader.get_realm()->value(),
+                    "TheMatrIX"
+                )
+            ))
             {
                 auto iter = reader.begin();
 

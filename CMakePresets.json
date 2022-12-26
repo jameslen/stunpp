@@ -41,19 +41,6 @@
 			}
 		},
 		{
-			"name": "x64-test-github",
-			"displayName": "x64 Test github",
-			"inherits": "windows-base",
-			"architecture": {
-				"value": "x64",
-				"strategy": "external"
-			},
-			"cacheVariables": {
-				"CMAKE_BUILD_TYPE": "Debug",
-				"BUILDING_TEST": true
-			}
-		},
-		{
 			"name": "x64-release",
 			"displayName": "x64 Release",
 			"inherits": "x64-debug",
