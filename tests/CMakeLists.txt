@@ -1,5 +1,7 @@
 enable_testing()
 
+include(GoogleTest)
+
 add_executable(
 	stunpp_tests
 	stunpp_reader_tests.cpp
@@ -12,5 +14,4 @@ target_link_libraries(
 	GTest::gtest_main
 )
 
-include(GoogleTest)
 gtest_discover_tests(stunpp_tests)

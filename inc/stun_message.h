@@ -9,6 +9,64 @@
 
 namespace stunpp
 {
+    namespace detail
+    {
+        template <typename T>
+        std::span<std::byte> to_byte_span(T* ptr)
+        {
+            return std::span<std::byte>(reinterpret_cast<std::byte*>(ptr), sizeof(T));
+        }
+
+        template <typename T>
+        std::span<const std::byte> to_byte_span(const T* ptr)
+        {
+            return std::span<const std::byte>(reinterpret_cast<const std::byte*>(ptr), sizeof(T));
+        }
+
+        template <typename T>
+        concept stun_attribute = requires (T t) {
+            std::is_base_of_v<stunpp::stun_attribute, T>;
+        };
+
+        template <typename T>
+        constexpr bool is_simple_stun_attribute = sizeof(T) == sizeof(stunpp::stun_attribute) &&
+            std::is_base_of_v<stunpp::stun_attribute, T> &&
+            !std::is_base_of_v<string_view_attribute, T> &&
+            !std::is_base_of_v<iterable_base_attribute, T> &&
+            !std::is_base_of_v<value_base_attribute, T>;
+
+        template <typename T>
+        concept simple_stun_attribute = is_simple_stun_attribute<T>;
+    }
+
+    class stun_password_generator;
+
+    struct message_builder;
+
+    template <typename attribute_t>
+        requires requires { 
+            typename attribute_t::value_t; 
+         }
+    struct attribute_builder
+    {
+        attribute_builder& append(
+            const typename attribute_t::value_t& value
+        ) noexcept
+        {
+            attribute->size += builder.append(detail::to_byte_span(&value));
+
+            return *this;
+        }
+
+        message_builder& end() noexcept
+        {
+            return builder;
+        }
+
+        attribute_t* attribute;
+        message_builder* builder;
+    };
+    
     struct message_builder
     {
         message_builder(
@@ -42,11 +100,12 @@ namespace stunpp
             const std::array<std::uint32_t, 3>& transaction_id
         ) noexcept;
 
+        // This is only intended to be used for the tests where the padding values are non-zero
         message_builder& set_padding_value(
             std::byte value
         ) noexcept;
 
-        template<typename attribute_t>
+        template<detail::stun_attribute attribute_t>
             requires std::is_base_of_v<string_view_attribute, attribute_t>
         message_builder& add_attribute(std::string_view value) noexcept
         {
@@ -57,7 +116,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t>
+        template<detail::stun_attribute attribute_t>
             requires std::is_base_of_v<ipv4_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN& address) noexcept
         {
@@ -70,7 +129,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t>
+        template<detail::stun_attribute attribute_t>
             requires std::is_base_of_v<ipv6_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN6& address) noexcept
         {
@@ -83,7 +142,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t>
+        template<detail::stun_attribute attribute_t>
             requires std::is_base_of_v<ipv4_xor_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(
             const SOCKADDR_IN& address
@@ -100,7 +159,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t>
+        template<detail::stun_attribute attribute_t>
             requires std::is_base_of_v<ipv6_xor_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(
             const SOCKADDR_IN6& address
@@ -123,7 +182,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t, typename data_t>
+        template<detail::stun_attribute attribute_t, typename data_t>
         message_builder& add_attribute(
             std::span<const data_t> data
         ) noexcept
@@ -135,7 +194,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t, std::integral data_t>
+        template<detail::stun_attribute attribute_t, std::integral data_t>
             requires std::is_base_of_v<integral_attribute<data_t>, attribute_t>
         message_builder& add_attribute(
             util::host_ordered<data_t> data
@@ -148,7 +207,7 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t, typename data_t>
+        template<detail::stun_attribute attribute_t, typename data_t>
             requires std::is_base_of_v<enum_attribute<data_t>, attribute_t>
         message_builder& add_attribute(
             data_t data
@@ -161,13 +220,20 @@ namespace stunpp
             return *this;
         }
 
-        template<typename attribute_t>
-            requires requires { 
-                sizeof(attribute_t) == sizeof(stun_attribute); 
-                !std::is_base_of_v<string_view_attribute, attribute_t>;
-                !std::is_base_of_v<data_base_attribute, attribute_t>;
-                !std::is_base_of_v<value_base_attribute, attribute_t>;
+        template<detail::stun_attribute attribute_t>
+            requires requires {
+                std::is_base_of_v<iterable_base_attribute, attribute_t>;
+                std::is_base_of_v<iterable_attribute<typename attribute_t::value_t>, attribute_t>;
             }
+        attribute_builder<attribute_t> add_attribute(
+        ) noexcept
+        {
+            auto attr = internal_add_attribute<attribute_t>();
+
+            return attribute_builder<attribute_t>{attr, *this};
+        }
+
+        template<detail::simple_stun_attribute attribute_t>
         message_builder& add_attribute() noexcept
         {
             std::ignore = internal_add_attribute<attribute_t>();
@@ -180,37 +246,27 @@ namespace stunpp
 
         message_builder& add_icmp_attribute(uint16_t type, uint16_t code, const std::array<std::byte, 4>& data) noexcept;
 
-        message_builder&& add_integrity(std::string_view username, std::string_view nonce, std::string_view realm, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view username, std::string_view realm, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view username, std::string_view password) & noexcept;
-        message_builder&& add_integrity(std::string_view password) & noexcept;
+        message_builder&& add_sha1hmac_message_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) & noexcept;
+
+        message_builder&& add_sha256hmac_message_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) & noexcept;
+
         std::span<std::byte> add_fingerprint() && noexcept;
         std::span<std::byte> create() && noexcept;
+
+        std::uint16_t append(std::span<const std::byte> data) noexcept;
+
     private:
         std::uint16_t m_buffer_used{0};
         std::span<std::byte> m_message;
         std::byte m_padding{ 0 };
 
         stun_header& get_header() noexcept;
-
-        // These attributes are only able to be included as part of the integrity attribute
-        template<> message_builder& add_attribute<username_attribute>(std::string_view value) noexcept
-        {
-            auto attr = internal_add_attribute<username_attribute>(value.size());
-
-            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
-
-            return *this;
-        }
-
-        template<> message_builder& add_attribute<realm_attribute>(std::string_view value) noexcept
-        {
-            auto attr = internal_add_attribute<realm_attribute>(value.size());
-
-            std::memcpy(detail::get_bytes_after(attr), value.data(), value.size());
-
-            return *this;
-        }
 
         void add_error_code(stun_error_code error) noexcept;
 
@@ -280,11 +336,14 @@ namespace stunpp
 
         const stun_header& get_header() const noexcept;
 
-        bool has_integrity() const noexcept { return m_integrity != nullptr; }
+        bool has_integrity() const noexcept { return m_integrity != nullptr || m_integrity_sha256 != nullptr; }
         const username_attribute* get_username() const noexcept { return m_username; }
         const realm_attribute* get_realm() const noexcept { return m_realm; }
         const nonce_attribute* get_nonce() const noexcept { return m_nonce; }
-        std::error_code check_integrity(std::string_view password);
+        std::error_code check_integrity(
+            const stun_password_generator& generator,
+            std::span<const std::uint8_t> key
+        ) const noexcept;
 
         inline auto begin() const noexcept { return m_begin; }
         inline auto end() const noexcept { return m_end; }
@@ -293,7 +352,6 @@ namespace stunpp
         message_reader(
             std::span<const std::byte> buffer
         ) noexcept;
-
 
         std::error_code validate() noexcept;
      
@@ -305,6 +363,7 @@ namespace stunpp
         const realm_attribute* m_realm{};
         const nonce_attribute* m_nonce{};
         const message_integrity_attribute* m_integrity{};
+        const message_integrity_sha256_attribute* m_integrity_sha256{};
 
     };
 }
