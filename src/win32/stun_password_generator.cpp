@@ -11,6 +11,55 @@
 namespace
 {
     constexpr inline bool NT_SUCCESS(NTSTATUS status) { return status >= 0; }
+
+    template<size_t hmac_size>
+    void compute_integrity(
+        BCRYPT_ALG_HANDLE alg_handle,
+        std::array<std::byte, hmac_size>& hmac,
+        std::span<const std::uint8_t> key,
+        const stunpp::stun_header& header,
+        std::span<const std::byte> data
+    )
+    {
+        BCRYPT_HASH_HANDLE hash_handle{};
+        std::array<std::uint8_t, 1024> hash_object_buffer{};
+
+        ULONG data_temp{};
+        DWORD hash_object_size{};
+        auto res = BCryptGetProperty(alg_handle, BCRYPT_OBJECT_LENGTH, (PBYTE)&hash_object_size, sizeof(DWORD), &data_temp, 0);
+        assert(NT_SUCCESS(res) && "Failed to query object length");
+        std::ignore = res;
+        assert(hash_object_size <= hash_object_buffer.size() && "Hash object larger than buffer");
+
+        DWORD hash_size{};
+        res = BCryptGetProperty(alg_handle, BCRYPT_HASH_LENGTH, (PBYTE)&hash_size, sizeof(DWORD), &data_temp, 0);
+        assert(NT_SUCCESS(res) && "Failed to query hash length");
+        std::ignore = res;
+        assert(hash_size <= hmac.size() && "Hash size larger than buffer");
+
+        res = BCryptCreateHash(
+            alg_handle,
+            &hash_handle,
+            reinterpret_cast<PUCHAR>(hash_object_buffer.data()), hash_object_size,
+            const_cast<std::uint8_t*>(key.data()), static_cast<ULONG>(key.size()),
+            BCRYPT_HASH_REUSABLE_FLAG
+        );
+        assert(NT_SUCCESS(res) && "Failed to create hash object");
+        std::ignore = res;
+
+        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<stunpp::stun_header*>(&header)), sizeof(header), 0);
+        assert(NT_SUCCESS(res) && "Failed to hash data");
+
+        res = BCryptHashData(hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), static_cast<ULONG>(data.size()), 0);
+        assert(NT_SUCCESS(res) && "Failed to hash data");
+        std::ignore = res;
+
+        res = BCryptFinishHash(hash_handle, reinterpret_cast<PUCHAR>(hmac.data()), static_cast<ULONG>(hmac.size()), 0);
+        assert(NT_SUCCESS(res) && "Failed to finish hash");
+        std::ignore = res;
+
+        BCryptDestroyHash(hash_handle);
+    }
 }
 
 namespace stunpp
@@ -43,14 +92,17 @@ namespace stunpp
         assert(NT_SUCCESS(res) && "Failed to open Crypto Provider");
         std::ignore = res;
 
-        res = BCryptOpenAlgorithmProvider(&sha256hamc_alg_handle, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG);
+        res = BCryptOpenAlgorithmProvider(&sha256hmac_alg_handle, BCRYPT_SHA256_ALGORITHM, nullptr, BCRYPT_ALG_HANDLE_HMAC_FLAG);
         assert(NT_SUCCESS(res) && "Failed to open Crypto Provider");
         std::ignore = res;
     }
 
     stun_password_generator::~stun_password_generator() noexcept
     {
-
+        BCryptDestroyHash(md5_hash_handle);
+        BCryptCloseAlgorithmProvider(md5_alg_handle, 0);
+        BCryptCloseAlgorithmProvider(sha1hmac_alg_handle, 0);
+        BCryptCloseAlgorithmProvider(sha256hmac_alg_handle, 0);
     }
 
     std::span<const std::uint8_t> stun_password_generator::generate_short_term_key(std::string_view password) const noexcept
@@ -96,45 +148,13 @@ namespace stunpp
         std::span<const std::byte> data
     ) const noexcept
     {
-        BCRYPT_HASH_HANDLE sha1hmac_hash_handle{};
-        std::array<std::uint8_t, 1024> sha1hmac_hash_object_buffer{};
-
-        ULONG data_temp{};
-        DWORD hash_object_size{};
-        auto res = BCryptGetProperty(sha1hmac_alg_handle, BCRYPT_OBJECT_LENGTH, (PBYTE)&hash_object_size, sizeof(DWORD), &data_temp, 0);
-        assert(NT_SUCCESS(res) && "Failed to query object length");
-        std::ignore = res;
-        assert(hash_object_size <= sha1hmac_hash_object_buffer.size() && "Hash object larger than buffer");
-
-        DWORD hash_size{};
-        res = BCryptGetProperty(sha1hmac_alg_handle, BCRYPT_HASH_LENGTH, (PBYTE)&hash_size, sizeof(DWORD), &data_temp, 0);
-        assert(NT_SUCCESS(res) && "Failed to query hash length");
-        std::ignore = res;
-        assert(hash_size <= hmac.size() && "Hash size larger than buffer");
-
-        res = BCryptCreateHash(
+        compute_integrity(
             sha1hmac_alg_handle,
-            &sha1hmac_hash_handle,
-            reinterpret_cast<PUCHAR>(sha1hmac_hash_object_buffer.data()), hash_object_size,
-            const_cast<std::uint8_t*>(key.data()), static_cast<ULONG>(key.size()),
-            BCRYPT_HASH_REUSABLE_FLAG
+            hmac,
+            key,
+            header,
+            data
         );
-        assert(NT_SUCCESS(res) && "Failed to create hash object");
-        std::ignore = res;
-
-        
-        res = BCryptHashData(sha1hmac_hash_handle, reinterpret_cast<PUCHAR>(const_cast<stun_header*>(&header)), sizeof(header), 0);
-        assert(NT_SUCCESS(res) && "Failed to hash data");
-
-        res = BCryptHashData(sha1hmac_hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), static_cast<ULONG>(data.size()), 0);
-        assert(NT_SUCCESS(res) && "Failed to hash data");
-        std::ignore = res;
-
-        res = BCryptFinishHash(sha1hmac_hash_handle, reinterpret_cast<PUCHAR>(hmac.data()), static_cast<ULONG>(hmac.size()), 0);
-        assert(NT_SUCCESS(res) && "Failed to finish hash");
-        std::ignore = res;
-
-        BCryptDestroyHash(sha1hmac_hash_handle);
     }
 
     void stun_password_generator::compute_integrity_sha256(
@@ -144,44 +164,13 @@ namespace stunpp
         std::span<const std::byte> data
     ) const noexcept
     {
-        BCRYPT_HASH_HANDLE sha256hmac_hash_handle{};
-        std::array<std::uint8_t, 1024> sha256hmac_hash_object_buffer{};
-
-        ULONG data_temp{};
-        DWORD hash_object_size{};
-        auto res = BCryptGetProperty(sha256hamc_alg_handle, BCRYPT_OBJECT_LENGTH, (PBYTE)&hash_object_size, sizeof(DWORD), &data_temp, 0);
-        assert(NT_SUCCESS(res) && "Failed to query object length");
-        std::ignore = res;
-        assert(hash_object_size <= sha256hmac_hash_object_buffer.size() && "Hash object larger than buffer");
-
-        DWORD hash_size{};
-        res = BCryptGetProperty(sha256hamc_alg_handle, BCRYPT_HASH_LENGTH, (PBYTE)&hash_size, sizeof(DWORD), &data_temp, 0);
-        assert(NT_SUCCESS(res) && "Failed to query hash length");
-        std::ignore = res;
-        assert(hash_size <= hmac.size() && "Hash size larger than buffer");
-
-        res = BCryptCreateHash(
-            sha256hamc_alg_handle,
-            &sha256hmac_hash_handle,
-            reinterpret_cast<PUCHAR>(sha256hmac_hash_object_buffer.data()), hash_object_size,
-            const_cast<std::uint8_t*>(key.data()), static_cast<ULONG>(key.size()),
-            BCRYPT_HASH_REUSABLE_FLAG
+        compute_integrity(
+            sha256hmac_alg_handle,
+            hmac,
+            key,
+            header,
+            data
         );
-        assert(NT_SUCCESS(res) && "Failed to create hash object");
-        std::ignore = res;
-
-        res = BCryptHashData(sha256hmac_hash_handle, reinterpret_cast<PUCHAR>(const_cast<stun_header*>(&header)), sizeof(header), 0);
-        assert(NT_SUCCESS(res) && "Failed to hash data");
-
-        res = BCryptHashData(sha256hmac_hash_handle, reinterpret_cast<PUCHAR>(const_cast<std::byte*>(data.data())), static_cast<ULONG>(data.size()), 0);
-        assert(NT_SUCCESS(res) && "Failed to hash data");
-        std::ignore = res;
-
-        res = BCryptFinishHash(sha256hmac_hash_handle, reinterpret_cast<PUCHAR>(hmac.data()), static_cast<ULONG>(hmac.size()), 0);
-        assert(NT_SUCCESS(res) && "Failed to finish hash");
-        std::ignore = res;
-
-        BCryptDestroyHash(sha256hmac_hash_handle);
     }
 
     std::array<uint32_t, 3> stun_password_generator::generate_id() noexcept

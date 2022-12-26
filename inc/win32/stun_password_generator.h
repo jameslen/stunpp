@@ -45,7 +45,7 @@ namespace stunpp
         // 
         // The key length is 32 bytes, and the parameters value is empty.
         // 
-        // key = SHA - 256(username ":" OpaqueString(realm)
+        // key = SHA-256(username ":" OpaqueString(realm)
         //     ":" OpaqueString(password))
         std::array<std::uint8_t, 32> generate_long_term_sha256_key(
             std::string_view username,
@@ -82,6 +82,6 @@ namespace stunpp
 
         BCRYPT_ALG_HANDLE sha1hmac_alg_handle{};
 
-        BCRYPT_ALG_HANDLE sha256hamc_alg_handle{};
+        BCRYPT_ALG_HANDLE sha256hmac_alg_handle{};
     };
 }
