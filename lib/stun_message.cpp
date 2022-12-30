@@ -685,4 +685,17 @@ namespace stunpp
         return *reinterpret_cast<const stun_header*>(m_message.data());
     }
 
+    const stun_attribute* message_reader::operator[](stun_attribute_type type) const noexcept
+    {
+        auto iter = std::find_if(begin(), end(), [type](const stun_attribute* attr) noexcept {
+            return attr->type == type;
+        });
+
+        if (iter == end())
+        {
+            return nullptr;
+        }
+        return iter.as<stun_attribute>();
+    }
+
 }

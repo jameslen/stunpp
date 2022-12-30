@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "network_order_storage.h"
+#include "stunpp/network_order_storage.h"
 
 TEST(network_ordering, initializing) {
     stunpp::util::network_ordered<std::uint16_t> network = stunpp::util::network_order_from_value((uint16_t)0xAABB);

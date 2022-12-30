@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "stun_message.h"
-#include "stun_password_generator.h"
+#include "stunpp/stun_message.h"
+#include "stunpp/win32/stun_password_generator.h"
 
 TEST(stun_builder, binding_request) {
     std::array<std::byte, 1024> buffer;
