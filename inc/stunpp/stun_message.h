@@ -323,7 +323,7 @@ namespace stunpp
         bool operator==(const stun_attribute_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
 
         template<typename T>
-        const T* as() const noexcept { assert(m_ptr->type == T::c_type);  return static_cast<const T*>(m_ptr); }
+        const T* as() const noexcept { return static_cast<const T*>(m_ptr); }
     private:
         const stun_attribute* m_ptr;
     };
@@ -347,6 +347,8 @@ namespace stunpp
 
         inline auto begin() const noexcept { return m_begin; }
         inline auto end() const noexcept { return m_end; }
+
+        const stun_attribute* operator[](stun_attribute_type type) const noexcept;
 
     private:
         message_reader(

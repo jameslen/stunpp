@@ -109,6 +109,10 @@ namespace stunpp
         nonce                    = util::hton<std::uint16_t>(0x0015),
         xor_mapped_address       = util::hton<std::uint16_t>(0x0020),
 
+        // RFC 5780
+        padding                  = util::hton<std::uint16_t>(0x0026),
+        response_port            = util::hton<std::uint16_t>(0x0027),
+
         // TURN RFC 8656
         channel_number           = util::hton<std::uint16_t>(0x000C),
         lifetime                 = util::hton<std::uint16_t>(0x000D),
@@ -123,11 +127,15 @@ namespace stunpp
         reserved8                = util::hton<std::uint16_t>(0x0021),
         reservation_token        = util::hton<std::uint16_t>(0x0022),
  
-        // ICE RFC 5245          
+        // ICE RFC 8445          
         priority                 = util::hton<std::uint16_t>(0x0024),
         use_candidate            = util::hton<std::uint16_t>(0x0025),
         ice_controlled           = util::hton<std::uint16_t>(0x8029),
         ice_controlling          = util::hton<std::uint16_t>(0x802A),
+
+        // RFC 5780
+        response_origin          = util::hton<std::uint16_t>(0x802B),
+        other_address            = util::hton<std::uint16_t>(0x802C),
 
         // STUN RFC 8489 Optional Range
         password_algorithms      = util::hton<std::uint16_t>(0x8002),
@@ -140,9 +148,6 @@ namespace stunpp
         additional_address_family = util::hton<std::uint16_t>(0x8000),
         address_error_code        = util::hton<std::uint16_t>(0x8001),
         icmp                      = util::hton<std::uint16_t>(0x8004),
-
-
-        invalid                  = 0xFFFF
     };
 
     enum class address_family : std::uint8_t
@@ -738,16 +743,6 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::alternate_server;
     };
 
-    struct ipv4_alternate_server_attribute : ipv4_mapped_address_attribute
-    {
-        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
-    };
-
-    struct ipv6_alternate_server_attribute : ipv6_mapped_address_attribute
-    {
-        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
-    };
-
     // The CHANNEL-NUMBER attribute contains the number of the channel.  The
     // value portion of this attribute is 4 bytes long and consists of a 16-
     // bit unsigned integer, followed by a two-octet RFFU (Reserved For
@@ -1059,6 +1054,25 @@ namespace stunpp
     struct ice_controlling_attribute : integral_attribute<std::uint64_t>
     {
         inline static constexpr auto c_type = stun_attribute_type::ice_controlling;
+    };
+
+    // The RESPONSE-ORIGIN attribute is inserted by the server and indicates
+    // the source IP address and port the response was sent from.  It is
+    // useful for detecting double NAT configurations.  It is only present
+    // in Binding Responses.
+    struct response_origin_attribute : mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::response_origin;
+    };
+
+    // The OTHER-ADDRESS attribute is used in Binding Responses.  It informs
+    // the client of the source IP address and port that would be used if
+    // the client requested the "change IP" and "change port" behavior.
+    // OTHER-ADDRESS MUST NOT be inserted into a Binding Response unless the
+    // server has a second IP address.
+    struct other_address_attribute : mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::other_address;
     };
 
 #pragma pack(pop)
