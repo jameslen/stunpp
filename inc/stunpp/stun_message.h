@@ -143,7 +143,7 @@ namespace stunpp
         }
 
         template<detail::stun_attribute attribute_t>
-            requires std::is_base_of_v<ipv4_xor_mapped_address_attribute, attribute_t>
+            requires std::is_base_of_v<xor_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(
             const SOCKADDR_IN& address
         ) noexcept

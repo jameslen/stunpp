@@ -15,7 +15,7 @@ include(CMakeDependentOption)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 add_subdirectory(lib)
-add_subdirectory(client)
+add_subdirectory(examples)
 
 if(BUILDING_TEST)
 	include(FetchContent)
