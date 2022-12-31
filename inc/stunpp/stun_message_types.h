@@ -743,6 +743,16 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::alternate_server;
     };
 
+    struct ipv4_alternate_server_attribute : ipv4_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
+    };
+
+    struct ipv6_alternate_server_attribute : ipv6_mapped_address_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::alternate_server;
+    };
+
     // The CHANNEL-NUMBER attribute contains the number of the channel.  The
     // value portion of this attribute is 4 bytes long and consists of a 16-
     // bit unsigned integer, followed by a two-octet RFFU (Reserved For
