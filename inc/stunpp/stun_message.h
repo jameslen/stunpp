@@ -117,10 +117,10 @@ namespace stunpp
         }
 
         template<detail::stun_attribute attribute_t>
-            requires std::is_base_of_v<ipv4_mapped_address_attribute, attribute_t>
+            requires std::is_base_of_v<mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN& address) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>();
+            auto attr = internal_add_attribute<attribute_t>(4);
 
             attr->family = address_family::ipv4;
             attr->port = address.sin_port;
@@ -130,10 +130,10 @@ namespace stunpp
         }
 
         template<detail::stun_attribute attribute_t>
-            requires std::is_base_of_v<ipv6_mapped_address_attribute, attribute_t>
+            requires std::is_base_of_v<mapped_address_attribute, attribute_t>
         message_builder& add_attribute(const SOCKADDR_IN6& address) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>();
+            auto attr = internal_add_attribute<attribute_t>(16);
 
             attr->family = address_family::ipv6;
             attr->port = address.sin6_port;
@@ -143,29 +143,30 @@ namespace stunpp
         }
 
         template<detail::stun_attribute attribute_t>
-            requires std::is_base_of_v<ipv4_xor_mapped_address_attribute, attribute_t>
+            requires std::is_base_of_v<xor_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(
             const SOCKADDR_IN& address
         ) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>();
+            auto attr = internal_add_attribute<attribute_t>(4);
 
             attr->family = address_family::ipv4;
 
             attr->port_bytes = util::network_order_from_value(address.sin_port) ^ static_cast<host_uint16_t>(c_stun_magic_cookie >> 16);
 
-            attr->address_bytes = (util::network_order_from_value<std::uint32_t>(address.sin_addr.S_un.S_addr) ^ c_stun_magic_cookie).read();
+            auto address_bytes = detail::get_bytes_after_as<std::uint32_t>(attr);
+            *address_bytes = (util::network_order_from_value<std::uint32_t>(address.sin_addr.S_un.S_addr) ^ c_stun_magic_cookie).read();
 
             return *this;
         }
 
         template<detail::stun_attribute attribute_t>
-            requires std::is_base_of_v<ipv6_xor_mapped_address_attribute, attribute_t>
+            requires std::is_base_of_v<xor_mapped_address_attribute, attribute_t>
         message_builder& add_attribute(
             const SOCKADDR_IN6& address
         ) noexcept
         {
-            auto attr = internal_add_attribute<attribute_t>();
+            auto attr = internal_add_attribute<attribute_t>(16);
 
             attr->family = address_family::ipv6;
 
@@ -177,7 +178,8 @@ namespace stunpp
             
             auto& id = get_header().transaction_id;
 
-            detail::xor_map_ipv6_address(attr->address_bytes, *src, id);
+            auto address_bytes = detail::get_bytes_after_as<std::array<std::uint32_t,4>>(attr);
+            detail::xor_map_ipv6_address(*address_bytes, *src, id);
 
             return *this;
         }
@@ -323,7 +325,7 @@ namespace stunpp
         bool operator==(const stun_attribute_iterator& rhs) const noexcept { return m_ptr == rhs.m_ptr; }
 
         template<typename T>
-        const T* as() const noexcept { assert(m_ptr->type == T::c_type);  return static_cast<const T*>(m_ptr); }
+        const T* as() const noexcept { return static_cast<const T*>(m_ptr); }
     private:
         const stun_attribute* m_ptr;
     };
@@ -347,6 +349,8 @@ namespace stunpp
 
         inline auto begin() const noexcept { return m_begin; }
         inline auto end() const noexcept { return m_end; }
+
+        const stun_attribute* operator[](stun_attribute_type type) const noexcept;
 
     private:
         message_reader(

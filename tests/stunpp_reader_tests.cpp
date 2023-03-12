@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "stun_message.h"
-#include "stun_password_generator.h"
+#include "stunpp/stun_message.h"
+#include "stunpp/win32/stun_password_generator.h"
 
 using namespace std::string_view_literals;
 
@@ -154,9 +154,9 @@ TEST(stun_reader, binding_response_success) {
         EXPECT_NE(iter, reader.end());
         EXPECT_EQ(iter->type, stunpp::stun_attribute_type::xor_mapped_address);
         EXPECT_EQ(iter->size, stunpp::host_uint16_t(8));
-        auto address = iter.as<stunpp::ipv4_xor_mapped_address_attribute>();
+        auto address = iter.as<stunpp::xor_mapped_address_attribute>();
         EXPECT_EQ(address->family, stunpp::address_family::ipv4);
-        auto result_address = address->address();
+        auto result_address = address->ipv4_address();
         EXPECT_EQ(result_address.sin_addr.S_un.S_addr, addr.sin_addr.S_un.S_addr);
         EXPECT_EQ(result_address.sin_port, addr.sin_port);
         EXPECT_EQ(++iter, reader.end());
@@ -376,8 +376,8 @@ TEST(stun_reader, rfc5769_ipv4_response) {
                 EXPECT_NE(++iter, reader.end());
                 EXPECT_EQ(iter->type, stunpp::stun_attribute_type::xor_mapped_address);
                 EXPECT_EQ(iter->size, stunpp::host_uint16_t(8));
-                auto address = iter.as<stunpp::ipv4_xor_mapped_address_attribute>();
-                auto mapped_address = address->address();
+                auto address = iter.as<stunpp::xor_mapped_address_attribute>();
+                auto mapped_address = address->ipv4_address();
                 EXPECT_EQ(std::memcmp(&mapped_address, &result_address, sizeof(mapped_address)), 0);
 
                 EXPECT_NE(++iter, reader.end());
@@ -480,8 +480,8 @@ TEST(stun_reader, rfc5769_ipv6_response) {
                 EXPECT_NE(++iter, reader.end());
                 EXPECT_EQ(iter->type, stunpp::stun_attribute_type::xor_mapped_address);
                 EXPECT_EQ(iter->size, stunpp::host_uint16_t(20));
-                auto address = iter.as<stunpp::ipv6_xor_mapped_address_attribute>();
-                auto mapped_address = address->address(header.transaction_id);
+                auto address = iter.as<stunpp::xor_mapped_address_attribute>();
+                auto mapped_address = address->ipv6_address(header.transaction_id);
                 EXPECT_EQ(std::memcmp(&mapped_address, &result_address, sizeof(mapped_address)), 0);
 
                 EXPECT_NE(++iter, reader.end());

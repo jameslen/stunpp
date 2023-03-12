@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 
-#include "stun_message.h"
-#include "stun_password_generator.h"
+#include "stunpp/stun_message.h"
+#include "stunpp/win32/stun_password_generator.h"
 
 TEST(stun_builder, binding_request) {
     std::array<std::byte, 1024> buffer;
@@ -59,10 +59,10 @@ TEST(stun_builder, binding_response_success) {
     std::array<std::byte, 1024> buffer;
     auto builder = stunpp::message_builder::create_success_response(
         stunpp::stun_method::binding, { 0x0BADF00D, 0xDEADBEEF, 0xFEEDF00D }, buffer)
-        .add_attribute<stunpp::ipv4_xor_mapped_address_attribute>(address);
+        .add_attribute<stunpp::xor_mapped_address_attribute>(address);
     auto packet = std::move(builder).create();
 
-    EXPECT_EQ(packet.size(), sizeof(stunpp::stun_header) + sizeof(stunpp::ipv4_xor_mapped_address_attribute)) << "Packet did size did not match the size of the header";
+    EXPECT_EQ(packet.size(), sizeof(stunpp::stun_header) + sizeof(stunpp::xor_mapped_address_attribute) + 4) << "Packet did size did not match the size of the header";
 
     const std::array c_expected_bytes{
         std::byte{0x01}, std::byte{0x01}, std::byte{0x00}, std::byte{0x0C}, // Binding Success, Size 12
@@ -166,7 +166,7 @@ TEST(stun_builder, rfc5769_ipv4_response) {
         )
         .set_padding_value(std::byte{ 0x20 })
         .add_attribute<stunpp::software_attribute>("test vector")
-        .add_attribute<stunpp::ipv4_xor_mapped_address_attribute>(address)
+        .add_attribute<stunpp::xor_mapped_address_attribute>(address)
         .add_sha1hmac_message_integrity(
             generator,
             generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
@@ -221,7 +221,7 @@ TEST(stun_builder, rfc5769_ipv6_response) {
     )
         .set_padding_value(std::byte{ 0x20 })
         .add_attribute<stunpp::software_attribute>("test vector")
-        .add_attribute<stunpp::ipv6_xor_mapped_address_attribute>(address)
+        .add_attribute<stunpp::xor_mapped_address_attribute>(address)
         .add_sha1hmac_message_integrity(
             generator,
             generator.generate_short_term_key("VOkJxbRl1RmTxUk/WvJxBt")
