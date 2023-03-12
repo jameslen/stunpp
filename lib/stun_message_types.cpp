@@ -33,20 +33,20 @@ namespace stunpp
         return ::get_method_type(message_type);
     }
 
-    SOCKADDR_IN ipv4_mapped_address_attribute::address() const noexcept
+    SOCKADDR_IN mapped_address_attribute::ipv4_address() const noexcept
     {
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
-        std::memcpy(&addr.sin_addr.S_un.S_addr, address_bytes.data(), address_bytes.size());
+        std::memcpy(&addr.sin_addr.S_un.S_addr, detail::get_bytes_after(this), 4);
         addr.sin_port = port.read();;
         return addr;
     }
 
-    SOCKADDR_IN6 ipv6_mapped_address_attribute::address() const noexcept
+    SOCKADDR_IN6 mapped_address_attribute::ipv6_address() const noexcept
     {
         SOCKADDR_IN6 addr{};
         addr.sin6_family = AF_INET6;
-        std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
+        std::memcpy(addr.sin6_addr.u.Byte, detail::get_bytes_after(this), 16);
         addr.sin6_port = port.read();
         return addr;
     }
@@ -56,24 +56,26 @@ namespace stunpp
         return port_bytes ^ host_uint16_t(c_stun_magic_cookie >> 16);
     }
 
-    SOCKADDR_IN ipv4_xor_mapped_address_attribute::address() const noexcept
+    SOCKADDR_IN xor_mapped_address_attribute::ipv4_address() const noexcept
     {
+        auto address_bytes = detail::get_bytes_after_as<std::uint32_t>(this);
         SOCKADDR_IN addr;
         addr.sin_family = AF_INET;
-        addr.sin_addr.S_un.S_addr = (util::network_order_from_value(address_bytes) ^ c_stun_magic_cookie).read();
+        addr.sin_addr.S_un.S_addr = (util::network_order_from_value(*address_bytes) ^ c_stun_magic_cookie).read();
         addr.sin_port = port().read();
         return addr;
     }
 
-    SOCKADDR_IN6 ipv6_xor_mapped_address_attribute::address(std::span<const std::uint32_t, 3> message_id) const noexcept
+    SOCKADDR_IN6 xor_mapped_address_attribute::ipv6_address(std::span<const std::uint32_t, 3> message_id) const noexcept
     {
+        auto address_bytes = detail::get_bytes_after_as<std::array<std::uint32_t,4>>(this);
         SOCKADDR_IN6 addr{};
         addr.sin6_family = AF_INET6;
-        std::memcpy(addr.sin6_addr.u.Byte, address_bytes.data(), address_bytes.size());
+        std::memcpy(addr.sin6_addr.u.Byte, address_bytes->data(), sizeof(*address_bytes));
 
         auto dst = reinterpret_cast<std::array<std::uint32_t, 4>*>(addr.sin6_addr.u.Byte);
 
-        detail::xor_map_ipv6_address(*dst, address_bytes, message_id);
+        detail::xor_map_ipv6_address(*dst, *address_bytes, message_id);
 
         addr.sin6_port = port().read();
         return addr;
