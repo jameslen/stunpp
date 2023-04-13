@@ -82,6 +82,11 @@ namespace stunpp
         create_permissions = 0x0008,
         channel_bind = 0x0009,
 
+        // TCP RFC 6062
+        connect = 0x000A,
+        connection_bind = 0x000B,
+        connection_attempt = 0x000C,
+
         invalid = 0xFFFF
     };
 
@@ -126,6 +131,9 @@ namespace stunpp
         dont_fragment            = util::hton<std::uint16_t>(0x001A),
         reserved8                = util::hton<std::uint16_t>(0x0021),
         reservation_token        = util::hton<std::uint16_t>(0x0022),
+
+        // TCP RFC 6062
+        connection_id            = util::hton<std::uint16_t>(0x002A), // TODO: Add type for this
  
         // ICE RFC 8445          
         priority                 = util::hton<std::uint16_t>(0x0024),
@@ -154,6 +162,12 @@ namespace stunpp
     {
         ipv4 = 0x01,
         ipv6 = 0x02
+    };
+
+    enum class requested_transport_type : std::uint8_t
+    {
+        tcp = 0x06,
+        udp = 0x11
     };
 
     enum class password_algorithms : std::uint16_t
@@ -838,11 +852,9 @@ namespace stunpp
     // 
     // The RFFU field MUST be set to zero on transmission and MUST be
     // ignored on reception.  It is reserved for future uses.
-    struct requested_transport_attribute : stun_attribute
+    struct requested_transport_attribute : enum_attribute<requested_transport_type>
     {
         inline static constexpr auto c_type = stun_attribute_type::requested_transport;
-
-        std::uint8_t protocol;
     };
 
     // This attribute is used by the client to request that the server set
@@ -867,6 +879,13 @@ namespace stunpp
         inline static constexpr auto c_type = stun_attribute_type::reservation_token;
 
         std::array<std::byte, 8> token;
+    };
+
+    // The CONNECTION - ID attribute uniquely identifies a peer data
+    // connection.It is a 32 - bit unsigned integral value.
+    struct connection_id_attribute : integral_attribute<std::uint32_t>
+    {
+        inline static constexpr auto c_type = stun_attribute_type::connection_id;
     };
 
     // This attribute is used by clients to request the allocation of an
@@ -897,6 +916,19 @@ namespace stunpp
     // Family:  There are two values defined for this field and specified in
     //    Section 14.1 of [RFC8489]: 0x01 for IPv4 addresses and 0x02 for
     //    IPv6 addresses.
+    //    (which can be as long as 509 bytes when encoding them or 763 bytes
+    //    when decoding them).
+    struct address_error_code_attribute : stun_attribute
+    {
+        inline static constexpr auto c_type = stun_attribute_type::address_error_code; // TODO: Create for this
+
+        address_family family;
+        std::uint8_t zero_bytes;
+        std::uint8_t class_bits : 3;
+        std::uint8_t zero_bits : 5;
+        std::uint8_t number;
+
+        stun_error_code error_code() const noexcept;
     // 
     // Reserved:  At this point, the 13 bits in the Reserved field MUST be
     //    set to zero by the server and MUST be ignored by the client.
@@ -913,19 +945,6 @@ namespace stunpp
     // Reason Phrase:  The recommended reason phrases for error codes 440
     //    and 508 are explained in Section 19.  The reason phrase MUST be a
     //    UTF-8 [RFC3629] encoded sequence of less than 128 characters
-    //    (which can be as long as 509 bytes when encoding them or 763 bytes
-    //    when decoding them).
-    struct address_error_code_attribute : stun_attribute
-    {
-        inline static constexpr auto c_type = stun_attribute_type::address_error_code; // TODO: Create for this
-
-        address_family family;
-        std::uint8_t zero_bytes;
-        std::uint8_t class_bits : 3;
-        std::uint8_t zero_bits : 5;
-        std::uint8_t number;
-
-        stun_error_code error_code() const noexcept;
         std::string_view error_message() const noexcept;
     };
 
@@ -968,7 +987,6 @@ namespace stunpp
         std::uint16_t icmp_code : 9;
         std::array<std::byte, 4> error_data;
     };
-
 
     // The PRIORITY attribute indicates the priority that is to be
     // associated with a peer reflexive candidate, should one be discovered
